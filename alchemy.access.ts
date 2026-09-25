@@ -77,10 +77,12 @@ export const emailAccessGate = (options: {
       type: "self_hosted",
       name: options.applicationName,
       domain: options.domain,
-      destinations: options.additionalDomains?.map((domain) => ({
-        type: "public" as const,
-        uri: `https://${domain}`,
-      })),
+      destinations: options.additionalDomains?.length
+        ? [options.domain, ...options.additionalDomains].map((domain) => ({
+            type: "public" as const,
+            uri: domain,
+          }))
+        : undefined,
       policies: [allow.policyId],
     });
   });
