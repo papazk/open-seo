@@ -169,6 +169,18 @@ export function DashboardInsights({
                   provisional.
                 </p>
               ) : null}
+              {opportunities.data.truncated ? (
+                <p className="text-xs text-muted-foreground">
+                  Source row limits were reached. More opportunities may exist
+                  beyond this sample.
+                </p>
+              ) : null}
+              {opportunities.data.sourceTimeZonesDiffer ? (
+                <p className="text-xs text-muted-foreground">
+                  The sources use different time zones, so daily boundaries may
+                  differ.
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

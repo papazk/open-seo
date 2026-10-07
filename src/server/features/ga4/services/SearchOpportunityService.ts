@@ -7,12 +7,14 @@ import {
 import { Ga4ReportError } from "@/server/lib/ga4Errors";
 import { Ga4ConnectionRepository } from "@/server/features/ga4/repositories/Ga4ConnectionRepository";
 import { ga4DateInTimeZone, shiftGa4Date } from "./Ga4Dates";
+import { domainHost } from "@/shared/domain-host";
 
 type SearchOpportunityInput = {
   projectId: string;
   startDate?: string;
   endDate?: string;
   limit?: number;
+  hostName?: string;
 };
 
 type Candidate = {
@@ -102,6 +104,13 @@ async function getOpportunities(
   opts: { now?: Date } = {},
 ) {
   const limit = input.limit ?? 50;
+  const hostName =
+    input.hostName === undefined ? undefined : domainHost(input.hostName);
+  if (input.hostName !== undefined && !hostName)
+    throw new Ga4ReportError(
+      "validation_error",
+      "Set a valid project domain before finding opportunities.",
+    );
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
     throw new Ga4ReportError(
       "validation_error",
@@ -135,6 +144,15 @@ async function getOpportunities(
     startRow: 0,
     type: "web",
     dataState: "final",
+    filters: hostName
+      ? [
+          {
+            dimension: "page",
+            operator: "includingRegex",
+            expression: `^https?://(www\\.)?${hostName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(/|$)`,
+          },
+        ]
+      : undefined,
   });
   const ga4 = await Ga4ReportingService.runReport({
     projectId: input.projectId,
@@ -144,12 +162,14 @@ async function getOpportunities(
     limit: 1_000,
     offset: 0,
     channel: "organic_search",
+    hostName: hostName ?? undefined,
   });
 
   const ga4ByPage = new Map<string, Record<string, string | number | null>>();
   let invalidGa4Rows = 0;
   for (const row of ga4.rows) {
     const host = typeof row.hostName === "string" ? row.hostName : "";
+    if (hostName && domainHost(host) !== hostName) continue;
     const landing = typeof row.landingPage === "string" ? row.landingPage : "";
     const key = normalizePageKey(`${host}${landing}`);
     if (!key) {
@@ -160,6 +180,7 @@ async function getOpportunities(
   }
 
   const candidates: Candidate[] = gsc.rows
+    .filter((row) => !hostName || domainHost(row.keys?.[0] ?? "") === hostName)
     .filter((row) => row.position >= 4 && row.position <= 20)
     .map((row) => {
       const page = row.keys?.[0] ?? "";

@@ -29,9 +29,8 @@ beforeAll(async () => {
       const statements = build(testDb as unknown as Parameters<Build>[0]);
       if (!statements.length) return;
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- builders are SQLite BatchItems; nonempty above
-      await testDb.batch(
-        statements as unknown as Parameters<typeof testDb.batch>[0],
-      );
+      const batch = statements as unknown as Parameters<typeof testDb.batch>[0];
+      await testDb.batch(batch);
     },
   }));
   await client.executeMultiple(`

@@ -102,12 +102,15 @@ export const getGa4DashboardReport = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     try {
+      const hostName = context.project.domain
+        ? domainHost(context.project.domain)
+        : null;
+      if (!hostName)
+        return { connected: true as const, domainRequired: true as const };
       const overview = await Ga4OrganicOverviewService.getOrganicOverview({
         projectId: context.projectId,
         ...dashboardPeriod(data.days),
-        hostName: context.project.domain
-          ? (domainHost(context.project.domain) ?? undefined)
-          : undefined,
+        hostName,
       });
       const totals = (row: Record<string, string | number | null> | null) => ({
         sessions: overviewMetric(row, "sessions"),
@@ -120,11 +123,16 @@ export const getGa4DashboardReport = createServerFn({ method: "POST" })
           context.projectId,
           "ga4",
           overview.source.propertyId,
-          overview.current ? "healthy" : "no_data",
+          overview.reportMetadata.hasLimitedData
+            ? "limited"
+            : overview.current
+              ? "healthy"
+              : "no_data",
         ),
       );
       return {
         connected: true as const,
+        domainRequired: false as const,
         range: overview.request.resolvedDateRange,
         hasLimitedData: overview.reportMetadata.hasLimitedData,
         totals: totals(overview.current),

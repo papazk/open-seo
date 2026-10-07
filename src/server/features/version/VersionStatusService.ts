@@ -14,7 +14,7 @@ const release = z.object({
 });
 const CACHE_KEY = "upstream:every-app/open-seo:latest-stable:v1";
 
-export type VersionStatus = {
+type VersionStatus = {
   build: typeof buildInfo;
   latestTag: string | null;
   checkedAt: string | null;

@@ -6,10 +6,13 @@ import {
   getSearchPerformanceTable,
 } from "./searchPerformance";
 
-const { getPerformance } = vi.hoisted(() => ({ getPerformance: vi.fn() }));
+const { getPerformance, record } = vi.hoisted(() => ({
+  getPerformance: vi.fn(),
+  record: vi.fn(),
+}));
 vi.mock("cloudflare:workers", () => ({ waitUntil: () => undefined }));
 vi.mock("@/server/features/google/IntegrationHealthService", () => ({
-  IntegrationHealthService: { record: vi.fn().mockResolvedValue(undefined) },
+  IntegrationHealthService: { record },
 }));
 vi.mock("@/server/features/gsc/services/GscService", () => ({
   GscService: { getPerformance },
@@ -54,7 +57,30 @@ const filters = [
 ];
 
 describe("Search Performance combined filters", () => {
-  beforeEach(() => getPerformance.mockResolvedValue({ rows: [] }));
+  beforeEach(() => {
+    getPerformance.mockResolvedValue({
+      rows: [],
+      siteUrl: "sc-domain:example.com",
+    });
+    record.mockResolvedValue(undefined);
+  });
+
+  it("does not replace whole-project health with an empty filtered report", async () => {
+    await getSearchPerformanceReport({ data });
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("records availability from the unfiltered dashboard report", async () => {
+    await getSearchPerformanceReport({
+      data: { projectId: "authorized-project", dashboardDays: 28 },
+    });
+    expect(record).toHaveBeenCalledWith(
+      "authorized-project",
+      "gsc",
+      "sc-domain:example.com",
+      "no_data",
+    );
+  });
 
   it("applies the same filters to both totals periods and striking distance, keeping country options available", async () => {
     await getSearchPerformanceReport({ data });

@@ -4,7 +4,13 @@ import { z } from "zod";
 const recordSchema = z.object({
   property: z.string(),
   checkedAt: z.iso.datetime(),
-  state: z.enum(["healthy", "no_data", "reconnect_required", "error"]),
+  state: z.enum([
+    "healthy",
+    "no_data",
+    "limited",
+    "reconnect_required",
+    "error",
+  ]),
 });
 type Provider = "gsc" | "ga4";
 type RecordedState = z.infer<typeof recordSchema>["state"];

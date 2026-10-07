@@ -65,6 +65,50 @@ describe("SearchOpportunityService", () => {
     mocks.runGa4Report.mockResolvedValue(ga4Result);
   });
 
+  it("scopes provider requests and candidates before a smaller host can be crowded out", async () => {
+    mocks.getPerformance.mockResolvedValue({
+      siteUrl: "sc-domain:example.com",
+      rows: [
+        ...Array.from({ length: 100 }, (_, index) => ({
+          keys: [`https://other.example.com/${index}`],
+          clicks: 10,
+          impressions: 10000,
+          ctr: 0.01,
+          position: 6,
+        })),
+        {
+          keys: ["https://example.com/relevant"],
+          clicks: 1,
+          impressions: 10,
+          ctr: 0.1,
+          position: 6,
+        },
+      ],
+    });
+    const result = await SearchOpportunityService.getOpportunities({
+      projectId: "p1",
+      limit: 5,
+      hostName: "example.com",
+    });
+    expect(result.rows.map((row) => row.page)).toEqual([
+      "https://example.com/relevant",
+    ]);
+    expect(mocks.getPerformance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: [
+          {
+            dimension: "page",
+            operator: "includingRegex",
+            expression: "^https?://(www\\.)?example\\.com(/|$)",
+          },
+        ],
+      }),
+    );
+    expect(mocks.runGa4Report).toHaveBeenCalledWith(
+      expect.objectContaining({ hostName: "example.com" }),
+    );
+  });
+
   it("normalizes URLs, scores joined candidates, and leaves unmatched pages unscored", async () => {
     mocks.getPerformance.mockResolvedValue({
       siteUrl: "https://example.com/",

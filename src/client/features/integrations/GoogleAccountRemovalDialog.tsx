@@ -59,7 +59,12 @@ export function GoogleAccountRemovalDialog({
               "dashboardActivation",
             ];
       await Promise.all(
-        keys.map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
+        [
+          ...keys,
+          "dashboardMeasurement",
+          "dashboardOpportunities",
+          "projects",
+        ].map((key) => queryClient.invalidateQueries({ queryKey: [key] })),
       );
       toast.success("Google account removed");
       onRemoved();

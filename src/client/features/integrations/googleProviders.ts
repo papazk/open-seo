@@ -142,6 +142,8 @@ export const googleProviders: Record<GoogleProvider, ProviderConfig> = {
       ["searchPerformanceTable", projectId],
       ["dashboardActivation", projectId],
       ["dashboardGscReport", projectId],
+      ["dashboardOpportunities", projectId],
+      ["projects", "coverage"],
     ],
   },
   ga4: {
@@ -175,6 +177,9 @@ export const googleProviders: Record<GoogleProvider, ProviderConfig> = {
     dependentKeys: (projectId) => [
       ["dashboardActivation", projectId],
       ["dashboardGa4Report", projectId],
+      ["dashboardMeasurement", projectId],
+      ["dashboardOpportunities", projectId],
+      ["projects", "coverage"],
     ],
   },
 };

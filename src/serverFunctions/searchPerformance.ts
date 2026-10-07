@@ -123,14 +123,15 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
         }),
       ]);
 
-      waitUntil(
-        IntegrationHealthService.record(
-          projectId,
-          "gsc",
-          current.siteUrl,
-          current.rows.length ? "healthy" : "no_data",
-        ),
-      );
+      if (!filters.length)
+        waitUntil(
+          IntegrationHealthService.record(
+            projectId,
+            "gsc",
+            current.siteUrl,
+            current.rows.length ? "healthy" : "no_data",
+          ),
+        );
       return {
         connected: true as const,
         range: {

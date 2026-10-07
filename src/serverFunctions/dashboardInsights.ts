@@ -5,6 +5,7 @@ import { Ga4MeasurementHealthService } from "@/server/features/ga4/services/Ga4M
 import { SearchOpportunityService } from "@/server/features/ga4/services/SearchOpportunityService";
 import { dashboardPeriod } from "@/shared/dashboard-period";
 import { domainHost, matchingWebStreams } from "@/shared/domain-host";
+import { Ga4ReportError } from "@/server/lib/ga4Errors";
 
 const inputSchema = z.object({
   projectId: z.string().min(1),
@@ -40,14 +41,20 @@ export const getDashboardOpportunities = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(inputSchema)
   .handler(async ({ data, context }) => {
+    const host = context.project.domain
+      ? domainHost(context.project.domain)
+      : null;
+    if (!host)
+      throw new Ga4ReportError(
+        "validation_error",
+        "Set a valid project domain before finding opportunities.",
+      );
     const result = await SearchOpportunityService.getOpportunities({
       projectId: context.projectId,
       ...dashboardPeriod(data.days),
       limit: 100,
+      hostName: host,
     });
-    const host = context.project.domain
-      ? domainHost(context.project.domain)
-      : null;
     return {
       rows: result.rows
         .filter((row) => host && domainHost(row.page) === host)
@@ -62,5 +69,9 @@ export const getDashboardOpportunities = createServerFn({ method: "POST" })
         })),
       limited: result.scoring.scoreDataLimited,
       engagementFallback: result.scoring.engagementFallback,
+      truncated: result.truncated.gsc || result.truncated.ga4,
+      sourceTimeZonesDiffer: result.warnings.includes(
+        "source_time_zones_differ",
+      ),
     };
   });

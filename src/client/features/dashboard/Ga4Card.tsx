@@ -66,6 +66,22 @@ export function Ga4Card({
     return <Ga4ConnectCard projectId={projectId} connected={connected} />;
   }
 
+  if (report?.domainRequired)
+    return (
+      <CardShell title="Organic traffic">
+        <p className="text-sm text-muted-foreground">
+          Set a valid project domain to report Analytics for this website.
+        </p>
+        <Link
+          to="/p/$projectId/settings"
+          params={{ projectId }}
+          className="text-sm underline underline-offset-4"
+        >
+          Set project domain
+        </Link>
+      </CardShell>
+    );
+
   // The empty state covers null sessions (no report row) and 0: a zero-session
   // period would otherwise render an all-zero flatline chart in an empty box.
   return (
@@ -102,8 +118,14 @@ export function Ga4Card({
         </div>
       ) : !report.totals.sessions ? (
         <p className="text-sm text-muted-foreground">
-          No organic search traffic recorded in these {days} complete days.
-          Connecting Analytics does not create historical data.
+          {report.hasLimitedData ? (
+            "Google applied reporting limits. Traffic availability could not be confirmed for this period."
+          ) : (
+            <>
+              No organic search traffic recorded in these {days} complete days.
+              Connecting Analytics does not create historical data.
+            </>
+          )}
         </p>
       ) : (
         <div className="space-y-4">
@@ -116,18 +138,26 @@ export function Ga4Card({
             <StatTile
               label="Sessions"
               value={statValue(report.totals.sessions, formatCount)}
-              delta={{
-                current: report.totals.sessions,
-                previous: report.prevTotals.sessions,
-              }}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.sessions,
+                      previous: report.prevTotals.sessions,
+                    }
+              }
             />
             <StatTile
               label="Active users"
               value={statValue(report.totals.activeUsers, formatCount)}
-              delta={{
-                current: report.totals.activeUsers,
-                previous: report.prevTotals.activeUsers,
-              }}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.activeUsers,
+                      previous: report.prevTotals.activeUsers,
+                    }
+              }
             />
             <StatTile
               label="Engagement rate"
@@ -136,10 +166,14 @@ export function Ga4Card({
             <StatTile
               label="Key events"
               value={statValue(report.totals.keyEvents, formatCount)}
-              delta={{
-                current: report.totals.keyEvents,
-                previous: report.prevTotals.keyEvents,
-              }}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.keyEvents,
+                      previous: report.prevTotals.keyEvents,
+                    }
+              }
             />
           </div>
           <ChartContainer config={sessionsChartConfig} className="h-24">

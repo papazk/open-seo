@@ -10,6 +10,7 @@ const labels = {
   unchecked: "Property saved · not checked",
   healthy: "Healthy",
   no_data: "Connected · no data",
+  limited: "Connected · Google limited data",
   reconnect_required: "Reconnect required",
   error: "Check failed",
   stale: "Last check is stale",
