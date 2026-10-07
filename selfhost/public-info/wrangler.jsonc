@@ -7,12 +7,12 @@
   "assets": {
     "directory": "./public",
     "html_handling": "drop-trailing-slash",
-    "not_found_handling": "none"
+    "not_found_handling": "none",
   },
   "routes": [
     {
       "pattern": "seo-info.3dprintingsupremacy.com",
-      "custom_domain": true
-    }
-  ]
+      "custom_domain": true,
+    },
+  ],
 }
