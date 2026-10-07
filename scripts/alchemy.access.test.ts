@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { emailAccessGate } from "../alchemy.access.ts";
+import { emailAccessGate } from "../deploy/alchemy/alchemy.access.ts";
 
 const access = vi.hoisted(() => ({
   policy: vi.fn(),
@@ -22,14 +22,14 @@ describe("emailAccessGate", () => {
 
   it("keeps the primary hostname protected when adding another public hostname", async () => {
     const program = emailAccessGate({
-        policyId: "SelfHostAllowUsers",
-        applicationId: "SelfHostAccess",
-        policyName: "self-host users",
-        applicationName: "self-host",
-        domain: "open-seo-selfhost.example.workers.dev",
-        additionalDomains: ["openseo.example.com"],
-        emails: ["owner@example.com"],
-      }) as unknown as Effect.Effect<unknown>;
+      policyId: "SelfHostAllowUsers",
+      applicationId: "SelfHostAccess",
+      policyName: "self-host users",
+      applicationName: "self-host",
+      domain: "open-seo-selfhost.example.workers.dev",
+      additionalDomains: ["openseo.example.com"],
+      emails: ["owner@example.com"],
+    }) as unknown as Effect.Effect<unknown>;
     await Effect.runPromise(program);
 
     expect(access.application).toHaveBeenCalledWith(

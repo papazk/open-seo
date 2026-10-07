@@ -7,6 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { devtools } from "@tanstack/devtools-vite";
 import { leanWorkerBundle } from "./vite-plugin-lean-worker-bundle";
+import { getBuildInfo } from "./scripts/build-info";
 
 export default defineConfig(({ mode, command }) => {
   // Vitest sets mode to "test". Return a config without the Cloudflare and
@@ -46,6 +47,7 @@ export default defineConfig(({ mode, command }) => {
   const emitSourcemaps = env.POSTHOG_SOURCEMAPS === "true";
 
   return {
+    define: { __OPENSEO_BUILD__: JSON.stringify(getBuildInfo()) },
     // Static files (favicons, manifest) live beside the app code instead of at
     // the repo root.
     publicDir: "src/public",

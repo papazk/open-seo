@@ -1,6 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { createClient, type Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import {
@@ -17,21 +15,23 @@ import type * as ServiceModule from "./GoogleAccountService";
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 let client: Client;
-const directory = mkdtempSync(join(tmpdir(), "google-account-removal-"));
 let service: typeof ServiceModule.GoogleAccountService;
 type Build = Parameters<typeof runBatch>[0];
 
 beforeAll(async () => {
-  client = createClient({ url: `file:${join(directory, "test.db")}` });
+  client = createClient({ url: ":memory:" });
   const testDb = drizzle(client);
   vi.doMock("@/db", () => ({ db: testDb }));
   vi.doMock("@/db/runBatch", () => ({
     runBatch: async (build: Build) => {
-      await testDb.transaction(async (tx) => {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- real SQLite Drizzle executor has the same query-builder surface
-        for (const statement of build(tx as unknown as Parameters<Build>[0]))
-          await statement;
-      });
+      // Use SQLite's atomic batch on the same in-memory connection, matching D1.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same SQLite query-builder surface as D1
+      const statements = build(testDb as unknown as Parameters<Build>[0]);
+      if (!statements.length) return;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- builders are SQLite BatchItems; nonempty above
+      await testDb.batch(
+        statements as unknown as Parameters<typeof testDb.batch>[0],
+      );
     },
   }));
   await client.executeMultiple(`
@@ -72,7 +72,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   client.close();
-  rmSync(directory, { recursive: true });
 });
 beforeEach(async () => {
   await client.executeMultiple(

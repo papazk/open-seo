@@ -12,6 +12,7 @@ import {
   formatPosition,
 } from "@/client/features/search-performance/SearchPerformanceColumns";
 import { getSearchPerformanceReport } from "@/serverFunctions/searchPerformance";
+import type { DashboardDays } from "@/shared/dashboard-period";
 import {
   EmptyCardBody,
   formatDay,
@@ -34,15 +35,17 @@ const issueTitles: Record<string, string | undefined> = Object.fromEntries(
 export function GscCard({
   projectId,
   connected,
+  days = 28,
 }: {
   projectId: string;
   connected: boolean;
+  days?: DashboardDays;
 }) {
   const reportQuery = useQuery({
-    queryKey: ["dashboardGscReport", projectId],
+    queryKey: ["dashboardGscReport", projectId, days],
     queryFn: () =>
       getSearchPerformanceReport({
-        data: { projectId, dateRange: "last_28_days" },
+        data: { projectId, dashboardDays: days },
       }),
     enabled: connected,
   });
@@ -61,7 +64,7 @@ export function GscCard({
   return (
     <CardShell
       title="Search performance"
-      stamp="Google Search Console · last 28 days"
+      stamp={`Google Search Console · ${days} complete days`}
       action={
         <Link
           to="/p/$projectId/search-performance"
@@ -73,9 +76,17 @@ export function GscCard({
       }
     >
       {reportQuery.isError ? (
-        <p className="text-sm text-muted-foreground">
-          Couldn&rsquo;t load Search Console data. Try again shortly.
-        </p>
+        <div className="space-y-2 text-sm">
+          <p>Couldn&rsquo;t load Search Console data.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={reportQuery.isFetching}
+            onClick={() => void reportQuery.refetch()}
+          >
+            {reportQuery.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : !report ? (
         <StatGridSkeleton />
       ) : (

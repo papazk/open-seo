@@ -1,6 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { createClient } from "@libsql/client";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
@@ -18,8 +16,7 @@ const grants = sqliteTable("account", {
 });
 
 it("keeps one refreshable grant per user and Google identity without changing project bindings", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "google-grant-migration-"));
-  const client = createClient({ url: `file:${join(directory, "test.db")}` });
+  const client = createClient({ url: ":memory:" });
   try {
     await client.executeMultiple(`
       CREATE TABLE account (
@@ -105,6 +102,5 @@ it("keeps one refreshable grant per user and Google identity without changing pr
     expect(concurrent.rows[0]?.refresh_token).toBe("new-refresh");
   } finally {
     client.close();
-    rmSync(directory, { recursive: true });
   }
 });

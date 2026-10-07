@@ -1,4 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
+import { waitUntil } from "cloudflare:workers";
+import { dashboardPeriod } from "@/shared/dashboard-period";
+import { IntegrationHealthService } from "@/server/features/google/IntegrationHealthService";
 import {
   GscNotConnectedError,
   GscService,
@@ -75,9 +78,11 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(searchPerformanceInputSchema)
   .handler(async ({ data, context }) => {
-    const { startDate, endDate } = resolveDateRange({
-      dateRange: data.dateRange,
-    });
+    const { startDate, endDate } = data.dashboardDays
+      ? dashboardPeriod(data.dashboardDays)
+      : resolveDateRange({
+          dateRange: data.dateRange,
+        });
     const prev = previousPeriod(startDate, endDate);
     const projectId = context.projectId;
     const { nonCountryFilters, filters } = buildGscFilters(data);
@@ -118,6 +123,14 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
         }),
       ]);
 
+      waitUntil(
+        IntegrationHealthService.record(
+          projectId,
+          "gsc",
+          current.siteUrl,
+          current.rows.length ? "healthy" : "no_data",
+        ),
+      );
       return {
         connected: true as const,
         range: {
@@ -132,6 +145,16 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
         countries: toDimensionRows(countries.rows),
       };
     } catch (error) {
+      const connection = await GscService.getConnection(projectId);
+      if (connection)
+        waitUntil(
+          IntegrationHealthService.record(
+            projectId,
+            "gsc",
+            connection.siteUrl,
+            isExpectedConnectionFailure(error) ? "reconnect_required" : "error",
+          ),
+        );
       if (isExpectedConnectionFailure(error)) {
         return { connected: false as const };
       }

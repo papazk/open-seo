@@ -9,15 +9,18 @@ const mocks = vi.hoisted(() => {
   const listProperties = vi.fn();
   const getProperty = vi.fn();
   const getUserInfoEmail = vi.fn();
+  const listDataStreams = vi.fn();
   return {
     state,
     listProperties,
     getProperty,
     getUserInfoEmail,
+    listDataStreams,
     createGa4AdminClient: vi.fn(() => ({
       listProperties,
       getProperty,
       getUserInfoEmail,
+      listDataStreams,
     })),
     dbSelect: vi.fn(() => ({
       from: vi.fn(() => ({
@@ -47,6 +50,39 @@ vi.mock("@/server/features/ga4/repositories/Ga4ConnectionRepository", () => ({
 }));
 
 describe("Ga4Service", () => {
+  it("rejects a property whose web streams belong to another domain", async () => {
+    mocks.state.grants = [{ id: "grant-a", accountId: "sub-a" }];
+    mocks.listProperties.mockResolvedValue([
+      {
+        propertyId: "properties/11",
+        displayName: "Site",
+        accountDisplayName: "Agency",
+      },
+    ]);
+    mocks.getProperty.mockResolvedValue({
+      name: "properties/11",
+      displayName: "Site",
+      timeZone: "UTC",
+      currencyCode: "USD",
+    });
+    mocks.listDataStreams.mockResolvedValue([
+      {
+        type: "WEB_DATA_STREAM",
+        webStreamData: { defaultUri: "https://other.test" },
+      },
+    ]);
+    await expect(
+      Ga4Service.setProperty({
+        projectId: "p1",
+        organizationId: "org1",
+        propertyId: "properties/11",
+        accountId: "sub-a",
+        userId: "u1",
+        domain: "example.com",
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     mocks.state.grants = [{ id: "grant-a", accountId: "sub-a" }];
   });

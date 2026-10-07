@@ -7,7 +7,7 @@ import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuIte
 import { Switch } from "@/client/components/ui/switch";
 import { authClient, useSession } from "@/lib/auth-client";
 import { isHostedClientAuthMode } from "@/lib/auth-mode";
-import { version } from "../../../../package.json";
+import { VersionStatus } from "@/client/features/settings/VersionStatus";
 
 export const Route = createFileRoute("/_app/settings/")({
   component: PersonalSettings,
@@ -73,15 +73,7 @@ function PersonalSettings() {
           </section>
         </>
       ) : (
-        <section className="space-y-3">
-          <SectionHeader title="About" />
-          <div className="flex items-center justify-between gap-6">
-            <span className="text-sm">Version</span>
-            <span className="font-mono text-sm text-muted-foreground">
-              v{version}
-            </span>
-          </div>
-        </section>
+        <VersionStatus />
       )}
     </div>
   );

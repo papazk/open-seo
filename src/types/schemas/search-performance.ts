@@ -37,6 +37,9 @@ const searchPerformanceFilterShape = {
     .optional(),
   projectId: z.string().min(1),
   dateRange: z.enum(SEARCH_PERFORMANCE_RANGES).default("last_28_days"),
+  dashboardDays: z
+    .union([z.literal(7), z.literal(28), z.literal(90)])
+    .optional(),
   device: z.enum(GSC_DEVICES).optional(),
   // ISO-3166-1 alpha-3, the code GSC returns in `country` dimension keys.
   country: z

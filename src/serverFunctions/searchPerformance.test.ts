@@ -7,6 +7,10 @@ import {
 } from "./searchPerformance";
 
 const { getPerformance } = vi.hoisted(() => ({ getPerformance: vi.fn() }));
+vi.mock("cloudflare:workers", () => ({ waitUntil: () => undefined }));
+vi.mock("@/server/features/google/IntegrationHealthService", () => ({
+  IntegrationHealthService: { record: vi.fn().mockResolvedValue(undefined) },
+}));
 vi.mock("@/server/features/gsc/services/GscService", () => ({
   GscService: { getPerformance },
   GscNotConnectedError: class extends Error {},

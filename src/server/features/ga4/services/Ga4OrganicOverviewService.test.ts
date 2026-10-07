@@ -1,6 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeGa4Connection } from "./ga4-test-fixtures";
 import { Ga4OrganicOverviewService } from "./Ga4OrganicOverviewService";
+import { buildGa4OverviewRequest } from "./Ga4ReportDefinitions";
+
+it("restricts a domain dashboard to its hostname while retaining the organic channel filter", () => {
+  const request = buildGa4OverviewRequest({
+    startDate: "2026-09-01",
+    endDate: "2026-09-28",
+    hostName: "example.com",
+  });
+  expect(request.dimensionFilter).toEqual({
+    andGroup: {
+      expressions: [
+        {
+          filter: {
+            fieldName: "sessionDefaultChannelGroup",
+            stringFilter: { matchType: "EXACT", value: "Organic Search" },
+          },
+        },
+        {
+          filter: {
+            fieldName: "hostName",
+            inListFilter: {
+              values: ["example.com", "www.example.com"],
+              caseSensitive: false,
+            },
+          },
+        },
+      ],
+    },
+  });
+});
 
 const mocks = vi.hoisted(() => ({
   getByProjectId: vi.fn(),

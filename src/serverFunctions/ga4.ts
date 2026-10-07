@@ -3,6 +3,9 @@ import { getRequest } from "@tanstack/react-start/server";
 import { waitUntil } from "cloudflare:workers";
 import { z } from "zod";
 import { shiftGa4Date } from "@/server/features/ga4/services/Ga4Dates";
+import { dashboardPeriod } from "@/shared/dashboard-period";
+import { IntegrationHealthService } from "@/server/features/google/IntegrationHealthService";
+import { domainHost } from "@/shared/domain-host";
 import { Ga4OrganicOverviewService } from "@/server/features/ga4/services/Ga4OrganicOverviewService";
 import { Ga4Service } from "@/server/features/ga4/services/Ga4Service";
 import { AppError } from "@/server/lib/errors";
@@ -92,11 +95,19 @@ function fillDailySessions(
  *  daily sessions trend, over the default (last 28 complete days) range. */
 export const getGa4DashboardReport = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
-  .validator(projectScopedSchema)
-  .handler(async ({ context }) => {
+  .validator(
+    projectScopedSchema.extend({
+      days: z.union([z.literal(7), z.literal(28), z.literal(90)]).default(28),
+    }),
+  )
+  .handler(async ({ data, context }) => {
     try {
       const overview = await Ga4OrganicOverviewService.getOrganicOverview({
         projectId: context.projectId,
+        ...dashboardPeriod(data.days),
+        hostName: context.project.domain
+          ? (domainHost(context.project.domain) ?? undefined)
+          : undefined,
       });
       const totals = (row: Record<string, string | number | null> | null) => ({
         sessions: overviewMetric(row, "sessions"),
@@ -104,8 +115,18 @@ export const getGa4DashboardReport = createServerFn({ method: "POST" })
         engagementRate: overviewMetric(row, "engagementRate"),
         keyEvents: overviewMetric(row, "keyEvents"),
       });
+      waitUntil(
+        IntegrationHealthService.record(
+          context.projectId,
+          "ga4",
+          overview.source.propertyId,
+          overview.current ? "healthy" : "no_data",
+        ),
+      );
       return {
         connected: true as const,
+        range: overview.request.resolvedDateRange,
+        hasLimitedData: overview.reportMetadata.hasLimitedData,
         totals: totals(overview.current),
         prevTotals: totals(overview.previous),
         trend: fillDailySessions(
@@ -114,6 +135,20 @@ export const getGa4DashboardReport = createServerFn({ method: "POST" })
         ),
       };
     } catch (error) {
+      const connection = await Ga4Service.getConnection(context.projectId);
+      if (connection)
+        waitUntil(
+          IntegrationHealthService.record(
+            context.projectId,
+            "ga4",
+            connection.propertyId,
+            error instanceof Ga4ReportError &&
+              (error.code === "ga4_reconnect_required" ||
+                error.code === "ga4_property_inaccessible")
+              ? "reconnect_required"
+              : "error",
+          ),
+        );
       // Not connected, a dead grant, or a lost/deleted property: the dashboard
       // card falls back to the connect card instead of retrying a report that
       // can never succeed. Other report errors are real faults.
@@ -169,8 +204,10 @@ export const setGa4Property = createServerFn({ method: "POST" })
       organizationId: context.organizationId,
       accountId: data.accountId,
       propertyId: data.propertyId,
+      domain: context.project.domain,
       userId: context.userId,
     });
+    await IntegrationHealthService.clear(context.projectId, "ga4");
     waitUntil(
       captureServerEvent({
         distinctId: context.userId,

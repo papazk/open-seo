@@ -1,16 +1,15 @@
 import * as React from "react";
 import { projectsQueryOptions } from "@/client/features/projects/projectQueries";
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import {
   getArchivedProjects,
   restoreProject,
 } from "@/serverFunctions/projects";
 import { PageHeader, SectionHeader } from "@/client/components/PageHeader";
-import { QueryState } from "@/client/components/QueryState";
-import { Badge } from "@/client/components/ui/badge";
+import { ProjectCoverage } from "@/client/features/projects/ProjectCoverage";
 import { Button } from "@/client/components/ui/button";
 import { getLastProjectId } from "@/client/lib/active-project";
 import { CreateProjectModal } from "@/client/features/projects/CreateProjectModal";
@@ -28,7 +27,6 @@ function ProjectsPage() {
   React.useEffect(() => {
     setCurrentProjectId(getLastProjectId());
   }, []);
-  const projectsQuery = useQuery(projectsQueryOptions());
 
   return (
     <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
@@ -44,41 +42,7 @@ function ProjectsPage() {
           }
         />
 
-        <QueryState
-          query={projectsQuery}
-          errorFallback="Failed to load projects"
-        >
-          {(data) => (
-            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-              {data.map((project) => (
-                <li key={project.id}>
-                  <Link
-                    to="/p/$projectId/settings"
-                    params={{ projectId: project.id }}
-                    className="flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted"
-                  >
-                    <span className="flex min-w-0 flex-col">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate font-medium">
-                          {project.name}
-                        </span>
-                        {project.id === currentProjectId ? (
-                          <Badge variant="secondary" size="sm">
-                            Current
-                          </Badge>
-                        ) : null}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {project.domain ?? "No domain set"}
-                      </span>
-                    </span>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </QueryState>
+        <ProjectCoverage currentProjectId={currentProjectId} />
 
         <ArchivedProjects />
       </div>

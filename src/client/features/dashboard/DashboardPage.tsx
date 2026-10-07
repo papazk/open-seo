@@ -1,6 +1,12 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Button } from "@/client/components/ui/button";
+import {
+  DASHBOARD_PERIODS,
+  type DashboardDays,
+} from "@/shared/dashboard-period";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { sort } from "remeda";
+import { VersionStatus } from "@/client/features/settings/VersionStatus";
+import { DashboardInsights } from "./DashboardInsights";
 import { DashboardOnboarding } from "./DashboardOnboarding";
 import {
   AuditHealthCard,
@@ -19,6 +25,7 @@ import { Skeleton } from "@/client/components/ui/skeleton";
 
 export function DashboardPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const [days, setDays] = useState<DashboardDays>(28);
 
   const activationQuery = useQuery({
     queryKey: ["dashboardActivation", projectId],
@@ -69,8 +76,8 @@ export function DashboardPage({ projectId }: { projectId: string }) {
   }
 
   // Wait for the overview too: rendering cards from `overview === undefined`
-  // flashes their empty states (and reshuffles the data-first sort) once the
-  // real data lands. An overview error falls through so the page still loads,
+  // flashes their empty states before the real data lands.
+  // An overview error falls through so the page still loads,
   // with the error in place of the audit and backlink cards.
   if (!activation || overviewQuery.isPending) {
     return (
@@ -96,15 +103,21 @@ export function DashboardPage({ projectId }: { projectId: string }) {
   const cards = [
     {
       key: "gsc",
-      hasData: gscConnected,
-      node: <GscCard projectId={projectId} connected={gscConnected} />,
+      node: (
+        <GscCard projectId={projectId} connected={gscConnected} days={days} />
+      ),
     },
     ...(ga4Connected || !activation.ga4.cardDismissedAt
       ? [
           {
             key: "ga4",
-            hasData: ga4Connected,
-            node: <Ga4Card projectId={projectId} connected={ga4Connected} />,
+            node: (
+              <Ga4Card
+                projectId={projectId}
+                connected={ga4Connected}
+                days={days}
+              />
+            ),
           },
         ]
       : []),
@@ -112,7 +125,6 @@ export function DashboardPage({ projectId }: { projectId: string }) {
       ? [
           {
             key: "audit",
-            hasData: overview.audit != null,
             node: (
               <AuditHealthCard projectId={projectId} audit={overview.audit} />
             ),
@@ -123,7 +135,6 @@ export function DashboardPage({ projectId }: { projectId: string }) {
       ? [
           {
             key: "backlinks",
-            hasData: overview.backlinks != null || refreshMutation.isPending,
             node: (
               <BacklinkPulseCard
                 projectId={projectId}
@@ -139,7 +150,30 @@ export function DashboardPage({ projectId }: { projectId: string }) {
   return (
     <div className="px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <div
+            role="group"
+            aria-label="Reporting period"
+            className="flex gap-1"
+          >
+            {DASHBOARD_PERIODS.map((period) => (
+              <Button
+                key={period}
+                variant={days === period ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={days === period}
+                onClick={() => setDays(period)}
+              >
+                {period} days
+              </Button>
+            ))}
+          </div>
+        </header>
+        <p className="text-xs text-muted-foreground">
+          Search and Analytics use the same complete dates, ending three days
+          ago. Changes compare with the previous equal period.
+        </p>
 
         <WorkspaceMergeBanner />
 
@@ -167,16 +201,22 @@ export function DashboardPage({ projectId }: { projectId: string }) {
           />
         ) : null}
 
-        {/* Every card is half width on large screens (only the checklist spans).
-          Cards with data render before setup pitches and empty states. Cards in
-          a row stretch to the same height. */}
+        {/* Stable card order keeps each report in the same place.
+          Cards in a row stretch to the same height. */}
         <div className="grid gap-5 lg:grid-cols-2">
-          {sort(cards, (a, b) => Number(b.hasData) - Number(a.hasData)).map(
-            (card) => (
-              <Fragment key={card.key}>{card.node}</Fragment>
-            ),
-          )}
+          {cards.map((card) => (
+            <Fragment key={card.key}>{card.node}</Fragment>
+          ))}
         </div>
+        {ga4Connected ? (
+          <DashboardInsights
+            key={projectId}
+            projectId={projectId}
+            days={days}
+            gscConnected={gscConnected}
+          />
+        ) : null}
+        <VersionStatus compact />
       </div>
     </div>
   );

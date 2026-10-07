@@ -14,6 +14,8 @@ import {
 } from "@/client/features/search-performance/SearchPerformanceColumns";
 import { getGa4DashboardReport } from "@/serverFunctions/ga4";
 import { Skeleton } from "@/client/components/ui/skeleton";
+import { Button } from "@/client/components/ui/button";
+import type { DashboardDays } from "@/shared/dashboard-period";
 import {
   ChartContainer,
   ChartTooltip,
@@ -45,13 +47,15 @@ function statValue(
 export function Ga4Card({
   projectId,
   connected,
+  days = 28,
 }: {
   projectId: string;
   connected: boolean;
+  days?: DashboardDays;
 }) {
   const reportQuery = useQuery({
-    queryKey: ["dashboardGa4Report", projectId],
-    queryFn: () => getGa4DashboardReport({ data: { projectId } }),
+    queryKey: ["dashboardGa4Report", projectId, days],
+    queryFn: () => getGa4DashboardReport({ data: { projectId, days } }),
     enabled: connected,
   });
   const report = reportQuery.data;
@@ -67,10 +71,10 @@ export function Ga4Card({
   return (
     <CardShell
       title="Organic traffic"
-      stamp="Google Analytics · last 28 days"
+      stamp={`Google Analytics · ${days} complete days`}
       action={
         <Link
-          to="/p/$projectId/settings"
+          to="/p/$projectId/settings/integrations"
           params={{ projectId }}
           hash="google-analytics"
           className={moreDetailsClass}
@@ -80,9 +84,17 @@ export function Ga4Card({
       }
     >
       {reportQuery.isError ? (
-        <p className="text-sm text-muted-foreground">
-          Couldn&rsquo;t load Google Analytics data. Try again shortly.
-        </p>
+        <div className="space-y-2 text-sm">
+          <p>Couldn&rsquo;t load Google Analytics data.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={reportQuery.isFetching}
+            onClick={() => void reportQuery.refetch()}
+          >
+            {reportQuery.isFetching ? "Retrying…" : "Retry"}
+          </Button>
+        </div>
       ) : !report ? (
         <div className="space-y-3" aria-busy>
           <StatGridSkeleton tileClassName="h-16" />
@@ -90,10 +102,16 @@ export function Ga4Card({
         </div>
       ) : !report.totals.sessions ? (
         <p className="text-sm text-muted-foreground">
-          No organic search traffic recorded in the last 28 days yet.
+          No organic search traffic recorded in these {days} complete days.
+          Connecting Analytics does not create historical data.
         </p>
       ) : (
         <div className="space-y-4">
+          {report.hasLimitedData ? (
+            <p className="text-xs text-muted-foreground">
+              Google applied reporting limits. Some figures may be incomplete.
+            </p>
+          ) : null}
           <div className="grid grid-cols-2 gap-3">
             <StatTile
               label="Sessions"

@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { waitUntil } from "cloudflare:workers";
 import { z } from "zod";
 import { GscService } from "@/server/features/gsc/services/GscService";
+import { IntegrationHealthService } from "@/server/features/google/IntegrationHealthService";
 import { hasGoogleOAuthConfig } from "@/server/features/google/oauth-config";
 import {
   createGoogleAuthorizationUrl,
@@ -106,6 +107,7 @@ export const setGscSite = createServerFn({ method: "POST" })
       siteUrl: data.siteUrl,
       userId: context.userId,
     });
+    await IntegrationHealthService.clear(context.projectId, "gsc");
     waitUntil(
       captureServerEvent({
         distinctId: context.userId,

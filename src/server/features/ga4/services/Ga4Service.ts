@@ -5,6 +5,7 @@ import { AppError } from "@/server/lib/errors";
 import { createGa4AdminClient } from "@/server/lib/ga4Client";
 import { Ga4AdminApiError, Ga4TokenError } from "@/server/lib/ga4Errors";
 import { GA4_OAUTH_PROVIDER_ID } from "@/shared/ga4";
+import { matchingWebStreams } from "@/shared/domain-host";
 import {
   Ga4ConnectionRepository,
   type Ga4Connection,
@@ -89,6 +90,7 @@ async function setProperty(input: {
   propertyId: string;
   accountId: string;
   userId: string;
+  domain?: string | null;
 }): Promise<Ga4Connection> {
   const grants = await listGrantsForUser(input.userId);
   if (!grants.some((grant) => grant.accountId === input.accountId)) {
@@ -113,6 +115,14 @@ async function setProperty(input: {
   }
 
   const property = await client.getProperty(input.propertyId);
+  if (input.domain) {
+    const streams = await client.listDataStreams(input.propertyId);
+    if (!matchingWebStreams(input.domain, streams).length)
+      throw new AppError(
+        "VALIDATION_ERROR",
+        "This Analytics property has no web stream matching the project's domain. Choose the matching property or check its web stream address in Google Analytics.",
+      );
+  }
   let connectedAccountEmail: string | null = null;
   try {
     connectedAccountEmail = await client.getUserInfoEmail();

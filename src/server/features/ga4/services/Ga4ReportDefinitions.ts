@@ -276,6 +276,7 @@ export function buildGa4OverviewRequest(input: {
   startDate: string;
   endDate: string;
   trend?: "daily" | "weekly";
+  hostName?: string;
 }): Ga4RunReportRequest {
   const dimensions = input.trend
     ? [{ name: input.trend === "daily" ? "date" : "yearWeek" }]
@@ -284,7 +285,24 @@ export function buildGa4OverviewRequest(input: {
     dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
     dimensions,
     metrics: OVERVIEW_METRICS.map((name) => ({ name })),
-    dimensionFilter: organicFilter(),
+    dimensionFilter: input.hostName
+      ? {
+          andGroup: {
+            expressions: [
+              organicFilter(),
+              {
+                filter: {
+                  fieldName: "hostName",
+                  inListFilter: {
+                    values: [input.hostName, `www.${input.hostName}`],
+                    caseSensitive: false,
+                  },
+                },
+              },
+            ],
+          },
+        }
+      : organicFilter(),
     offset: "0",
     limit: input.trend ? "1000" : "1",
     orderBys: input.trend

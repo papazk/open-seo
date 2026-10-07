@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireOrgPermission } from "@/server/auth/org-gate";
 import { ProjectService } from "@/server/features/projects/services/ProjectService";
+import { ProjectCoverageService } from "@/server/features/projects/services/ProjectCoverageService";
 import {
   requireAuthenticatedContext,
   requireProjectContext,
@@ -14,6 +15,12 @@ import {
 import { z } from "zod";
 
 const projectScopedSchema = z.object({ projectId: z.string().min(1) });
+
+export const getProjectCoverage = createServerFn({ method: "GET" })
+  .middleware(requireAuthenticatedContext)
+  .handler(({ context }) =>
+    ProjectCoverageService.getCoverage(context.organizationId),
+  );
 
 export const getProjects = createServerFn({ method: "POST" })
   .middleware(requireAuthenticatedContext)
