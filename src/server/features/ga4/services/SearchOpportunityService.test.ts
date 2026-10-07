@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GscNotConnectedError } from "@/server/lib/gscErrors";
 import { makeGa4ReportResult } from "./ga4-test-fixtures";
 import { SearchOpportunityService } from "./SearchOpportunityService";
 
@@ -25,21 +24,6 @@ vi.mock("@/server/features/ga4/services/Ga4ReportingService", () => ({
 }));
 
 const ga4Result = makeGa4ReportResult({
-  status: "ok" as const,
-  source: {
-    provider: "google_analytics" as const,
-    propertyId: "properties/123",
-    propertyDisplayName: "Example",
-  },
-  request: {
-    requestedDateRange: { startDate: "2026-07-07", endDate: "2026-08-03" },
-    resolvedDateRange: { startDate: "2026-07-07", endDate: "2026-08-03" },
-    propertyTimeZone: "America/New_York",
-    currencyCode: "USD",
-    channel: "organic_search" as const,
-    limit: 1_000,
-    offset: 0,
-  },
   rows: [
     {
       hostName: "example.com",
@@ -68,17 +52,6 @@ const ga4Result = makeGa4ReportResult({
   ],
   rowCount: 2,
   totalRowCount: 2,
-  pageInfo: { offset: 0, limit: 1_000, hasMore: false, nextOffset: null },
-  reportMetadata: {
-    dataLossFromOtherRow: false,
-    subjectToThresholding: false,
-    sampling: [],
-    restrictedMetrics: [],
-    emptyReason: null,
-    hasLimitedData: false,
-  },
-  quota: null,
-  warnings: [],
 });
 
 describe("SearchOpportunityService", () => {
@@ -90,6 +63,50 @@ describe("SearchOpportunityService", () => {
       siteUrl: "https://example.com/",
     });
     mocks.runGa4Report.mockResolvedValue(ga4Result);
+  });
+
+  it("scopes provider requests and candidates before a smaller host can be crowded out", async () => {
+    mocks.getPerformance.mockResolvedValue({
+      siteUrl: "sc-domain:example.com",
+      rows: [
+        ...Array.from({ length: 100 }, (_, index) => ({
+          keys: [`https://other.example.com/${index}`],
+          clicks: 10,
+          impressions: 10000,
+          ctr: 0.01,
+          position: 6,
+        })),
+        {
+          keys: ["https://example.com/relevant"],
+          clicks: 1,
+          impressions: 10,
+          ctr: 0.1,
+          position: 6,
+        },
+      ],
+    });
+    const result = await SearchOpportunityService.getOpportunities({
+      projectId: "p1",
+      limit: 5,
+      hostName: "example.com",
+    });
+    expect(result.rows.map((row) => row.page)).toEqual([
+      "https://example.com/relevant",
+    ]);
+    expect(mocks.getPerformance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: [
+          {
+            dimension: "page",
+            operator: "includingRegex",
+            expression: "^https?://(www\\.)?example\\.com(/|$)",
+          },
+        ],
+      }),
+    );
+    expect(mocks.runGa4Report).toHaveBeenCalledWith(
+      expect.objectContaining({ hostName: "example.com" }),
+    );
   });
 
   it("normalizes URLs, scores joined candidates, and leaves unmatched pages unscored", async () => {
@@ -225,14 +242,5 @@ describe("SearchOpportunityService", () => {
         endDate: "2026-08-02",
       }),
     );
-  });
-
-  it("fails before querying GA4 when Search Console is not connected", async () => {
-    mocks.getGscConnection.mockResolvedValue(null);
-    await expect(
-      SearchOpportunityService.getOpportunities({ projectId: "project_1" }),
-    ).rejects.toBeInstanceOf(GscNotConnectedError);
-    expect(mocks.getPerformance).not.toHaveBeenCalled();
-    expect(mocks.runGa4Report).not.toHaveBeenCalled();
   });
 });

@@ -47,7 +47,7 @@ Already logged in from before without the `access:write` scope? Run `pnpm alchem
 Copy the template and fill in the required values:
 
 ```bash
-cp .env.selfhost.example .env.selfhost
+cp deploy/.env.selfhost.example .env.selfhost
 ```
 
 ## 4) Deploy
@@ -57,6 +57,8 @@ pnpm deploy:selfhost --yes
 ```
 
 This provisions the D1 database, KV namespaces, and R2 bucket, applies the database migrations, deploys the Workers, and creates the Cloudflare Access application protecting it (allowing exactly `ACCESS_ALLOWED_EMAILS`). If the account has no Zero Trust team yet, one is created for you, named after your workers.dev subdomain.
+
+To use your own hostname, set `SELFHOST_CUSTOM_DOMAIN` in `.env.selfhost` to a hostname in a Cloudflare zone owned by the same account, then redeploy. Cloudflare routes that hostname to the app Worker and adds it to the existing Access application, so the current `workers.dev` address remains available and both addresses use the same allowed-email policy. If you manage Access yourself with `TEAM_DOMAIN` and `POLICY_AUD`, add the hostname to that application's public destinations too.
 
 To manage the Access application yourself instead, set `TEAM_DOMAIN` (`https://your-team.cloudflareaccess.com`) and `POLICY_AUD` (the application's audience tag) in `.env.selfhost` — the deploy then provisions no Access resources.
 

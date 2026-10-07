@@ -23,6 +23,7 @@ type Ga4ReportRequestInput = {
   ecommerceBreakdown?: "item" | "landing_page";
   ecommerceOnlyWithTransactions?: boolean;
   audienceBreakdown?: "device" | "country" | "new_vs_returning";
+  hostName?: string;
 };
 
 const REPORT_DEFINITIONS = {
@@ -253,6 +254,20 @@ export function getGa4ReportConfiguration(input: Ga4ReportRequestInput) {
   };
 }
 
+function withHostFilter(filter: unknown, hostName?: string): unknown {
+  if (!hostName) return filter;
+  const host = {
+    filter: {
+      fieldName: "hostName",
+      inListFilter: {
+        values: [hostName, `www.${hostName}`],
+        caseSensitive: false,
+      },
+    },
+  };
+  return filter ? { andGroup: { expressions: [filter, host] } } : host;
+}
+
 export function buildGa4ReportRequest(
   input: Ga4ReportRequestInput,
 ): Ga4RunReportRequest {
@@ -262,7 +277,7 @@ export function buildGa4ReportRequest(
     dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
     dimensions: dimensions.map((name) => ({ name })),
     metrics: definition.metrics.map((name) => ({ name })),
-    dimensionFilter: reportFilter(input),
+    dimensionFilter: withHostFilter(reportFilter(input), input.hostName),
     metricFilter: metricFilter(input),
     offset: String(input.offset),
     limit: String(input.limit),
@@ -276,6 +291,7 @@ export function buildGa4OverviewRequest(input: {
   startDate: string;
   endDate: string;
   trend?: "daily" | "weekly";
+  hostName?: string;
 }): Ga4RunReportRequest {
   const dimensions = input.trend
     ? [{ name: input.trend === "daily" ? "date" : "yearWeek" }]
@@ -284,7 +300,7 @@ export function buildGa4OverviewRequest(input: {
     dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
     dimensions,
     metrics: OVERVIEW_METRICS.map((name) => ({ name })),
-    dimensionFilter: organicFilter(),
+    dimensionFilter: withHostFilter(organicFilter(), input.hostName),
     offset: "0",
     limit: input.trend ? "1000" : "1",
     orderBys: input.trend

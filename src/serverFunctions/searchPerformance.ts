@@ -1,4 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
+import { waitUntil } from "cloudflare:workers";
+import { dashboardPeriod } from "@/shared/dashboard-period";
+import { IntegrationHealthService } from "@/server/features/google/IntegrationHealthService";
 import {
   GscNotConnectedError,
   GscService,
@@ -30,23 +33,32 @@ const COUNTRY_ROW_LIMIT = 25;
 // (GSC_MAX_ROW_LIMIT). Large stores get everything up to this ceiling.
 const EXPORT_ROW_LIMIT = 1000;
 
-/** Build GSC filter groups shared by every call. Device applies everywhere;
+/** Build GSC filter groups shared by every call. Device, page, and query apply everywhere;
  *  country applies everywhere except the country breakdown itself (so the
  *  dropdown keeps every option visible while one country is selected). */
-function buildGscFilters(data: { device?: string; country?: string }): {
-  deviceFilters: GscPerformanceFilter[];
+function buildGscFilters(data: {
+  device?: string;
+  country?: string;
+  pageFilter?: { operator: "contains" | "equals"; expression: string };
+  queryFilter?: { operator: "contains" | "equals"; expression: string };
+}): {
+  nonCountryFilters: GscPerformanceFilter[];
   filters: GscPerformanceFilter[];
 } {
-  const deviceFilters: GscPerformanceFilter[] = data.device
+  const nonCountryFilters: GscPerformanceFilter[] = data.device
     ? [{ dimension: "device", operator: "equals", expression: data.device }]
     : [];
+  if (data.pageFilter)
+    nonCountryFilters.push({ dimension: "page", ...data.pageFilter });
+  if (data.queryFilter)
+    nonCountryFilters.push({ dimension: "query", ...data.queryFilter });
   const filters: GscPerformanceFilter[] = data.country
     ? [
-        ...deviceFilters,
+        ...nonCountryFilters,
         { dimension: "country", operator: "equals", expression: data.country },
       ]
-    : deviceFilters;
-  return { deviceFilters, filters };
+    : nonCountryFilters;
+  return { nonCountryFilters, filters };
 }
 
 /** Not connected, or a dead/denied grant (token failure or 401/403): the page
@@ -66,12 +78,14 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
   .validator(searchPerformanceInputSchema)
   .handler(async ({ data, context }) => {
-    const { startDate, endDate } = resolveDateRange({
-      dateRange: data.dateRange,
-    });
+    const { startDate, endDate } = data.dashboardDays
+      ? dashboardPeriod(data.dashboardDays)
+      : resolveDateRange({
+          dateRange: data.dateRange,
+        });
     const prev = previousPeriod(startDate, endDate);
     const projectId = context.projectId;
-    const { deviceFilters, filters } = buildGscFilters(data);
+    const { nonCountryFilters, filters } = buildGscFilters(data);
 
     try {
       const [current, previous, queryPages, countries] = await Promise.all([
@@ -104,11 +118,20 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
           startDate,
           endDate,
           dimensions: ["country"],
-          filters: deviceFilters,
+          filters: nonCountryFilters,
           rowLimit: COUNTRY_ROW_LIMIT,
         }),
       ]);
 
+      if (!filters.length)
+        waitUntil(
+          IntegrationHealthService.record(
+            projectId,
+            "gsc",
+            current.siteUrl,
+            current.rows.length ? "healthy" : "no_data",
+          ),
+        );
       return {
         connected: true as const,
         range: {
@@ -123,6 +146,16 @@ export const getSearchPerformanceReport = createServerFn({ method: "POST" })
         countries: toDimensionRows(countries.rows),
       };
     } catch (error) {
+      const connection = await GscService.getConnection(projectId);
+      if (connection)
+        waitUntil(
+          IntegrationHealthService.record(
+            projectId,
+            "gsc",
+            connection.siteUrl,
+            isExpectedConnectionFailure(error) ? "reconnect_required" : "error",
+          ),
+        );
       if (isExpectedConnectionFailure(error)) {
         return { connected: false as const };
       }
@@ -167,6 +200,10 @@ export const getSearchPerformanceTable = createServerFn({ method: "POST" })
         page: data.page,
         pageSize: data.pageSize,
         hasNextPage,
+        totalCount:
+          !hasNextPage && (offset === 0 || rows.length > 0)
+            ? offset + rows.length
+            : null,
         rows,
       };
     } catch (error) {

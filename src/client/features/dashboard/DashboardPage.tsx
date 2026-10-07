@@ -1,6 +1,12 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { Button } from "@/client/components/ui/button";
+import {
+  DASHBOARD_PERIODS,
+  type DashboardDays,
+} from "@/shared/dashboard-period";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { sort } from "remeda";
+import { VersionStatus } from "@/client/features/settings/VersionStatus";
+import { DashboardInsights } from "./DashboardInsights";
 import { DashboardOnboarding } from "./DashboardOnboarding";
 import {
   AuditHealthCard,
@@ -9,15 +15,17 @@ import {
 } from "@/client/features/dashboard/DashboardCards";
 import { Ga4Card } from "@/client/features/dashboard/Ga4Card";
 import { WorkspaceMergeBanner } from "@/client/features/dashboard/WorkspaceMergeBanner";
-import { getStandardErrorMessage } from "@/client/lib/error-messages";
+import { QueryError } from "@/client/components/QueryState";
 import {
   getDashboardActivation,
   getDashboardOverview,
   refreshDashboardBacklinkSnapshot,
 } from "@/serverFunctions/dashboard";
+import { Skeleton } from "@/client/components/ui/skeleton";
 
 export function DashboardPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const [days, setDays] = useState<DashboardDays>(28);
 
   const activationQuery = useQuery({
     queryKey: ["dashboardActivation", projectId],
@@ -26,6 +34,8 @@ export function DashboardPage({ projectId }: { projectId: string }) {
   const overviewQuery = useQuery({
     queryKey: ["dashboardOverview", projectId],
     queryFn: () => getDashboardOverview({ data: { projectId } }),
+    refetchInterval: (query) =>
+      query.state.data?.audit?.status === "running" ? 3000 : false,
   });
 
   const activation = activationQuery.data;
@@ -52,30 +62,33 @@ export function DashboardPage({ projectId }: { projectId: string }) {
     refreshMutation.mutate();
   }, [needsSnapshot, refreshMutation]);
 
-  if (activationQuery.isError) {
+  if (activationQuery.isError && !activation) {
     return (
       <div className="px-4 py-4 md:px-6 md:py-6">
-        <div className="alert alert-error">
-          {getStandardErrorMessage(activationQuery.error)}
-        </div>
+        <QueryError
+          error={activationQuery.error}
+          fallback="Failed to load dashboard"
+          onRetry={() => void activationQuery.refetch()}
+          isRetrying={activationQuery.isFetching}
+        />
       </div>
     );
   }
 
   // Wait for the overview too: rendering cards from `overview === undefined`
-  // flashes their empty states (and reshuffles the data-first sort) once the
-  // real data lands. An overview error falls through so the page still loads.
+  // flashes their empty states before the real data lands.
+  // An overview error falls through so the page still loads,
+  // with the error in place of the audit and backlink cards.
   if (!activation || overviewQuery.isPending) {
     return (
-      <div
-        className="mx-auto flex max-w-5xl flex-col gap-5 px-4 py-4 md:px-6 md:py-6"
-        aria-busy
-      >
-        <div className="skeleton h-8 w-52" />
-        <div className="skeleton h-36" />
-        <div className="grid gap-5 lg:grid-cols-2">
-          <div className="skeleton h-44" />
-          <div className="skeleton h-44" />
+      <div className="px-4 py-4 md:px-6 md:py-6" aria-busy>
+        <div className="mx-auto flex max-w-7xl flex-col gap-5">
+          <Skeleton className="h-8 w-52" />
+          <Skeleton className="h-36" />
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Skeleton className="h-44" />
+            <Skeleton className="h-44" />
+          </div>
         </div>
       </div>
     );
@@ -85,44 +98,47 @@ export function DashboardPage({ projectId }: { projectId: string }) {
   const gscConnected = activation.gsc.connected;
   const ga4Connected = activation.ga4.connected;
 
+  // Search Console always renders: connected shows the report, otherwise the
+  // connect pitch. It sits ahead of the optional GA4 pitch.
   const cards = [
-    ...(gscConnected
-      ? [
-          {
-            key: "gsc",
-            hasData: true,
-            node: <GscCard projectId={projectId} connected />,
-          },
-        ]
-      : []),
+    {
+      key: "gsc",
+      node: (
+        <GscCard projectId={projectId} connected={gscConnected} days={days} />
+      ),
+    },
     ...(ga4Connected || !activation.ga4.cardDismissedAt
       ? [
           {
             key: "ga4",
-            hasData: ga4Connected,
-            node: <Ga4Card projectId={projectId} connected={ga4Connected} />,
+            node: (
+              <Ga4Card
+                projectId={projectId}
+                connected={ga4Connected}
+                days={days}
+              />
+            ),
           },
         ]
       : []),
-    {
-      key: "audit",
-      hasData: overview?.audit != null,
-      node: (
-        <AuditHealthCard
-          projectId={projectId}
-          audit={overview?.audit ?? null}
-        />
-      ),
-    },
-    ...(showBacklinks
+    ...(overview
+      ? [
+          {
+            key: "audit",
+            node: (
+              <AuditHealthCard projectId={projectId} audit={overview.audit} />
+            ),
+          },
+        ]
+      : []),
+    ...(overview && showBacklinks
       ? [
           {
             key: "backlinks",
-            hasData: overview?.backlinks != null || refreshMutation.isPending,
             node: (
               <BacklinkPulseCard
                 projectId={projectId}
-                backlinks={overview?.backlinks ?? null}
+                backlinks={overview.backlinks}
                 refreshing={refreshMutation.isPending}
               />
             ),
@@ -133,8 +149,31 @@ export function DashboardPage({ projectId }: { projectId: string }) {
 
   return (
     <div className="px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-5">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
+      <div className="mx-auto flex max-w-7xl flex-col gap-5">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <div
+            role="group"
+            aria-label="Reporting period"
+            className="flex gap-1"
+          >
+            {DASHBOARD_PERIODS.map((period) => (
+              <Button
+                key={period}
+                variant={days === period ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={days === period}
+                onClick={() => setDays(period)}
+              >
+                {period} days
+              </Button>
+            ))}
+          </div>
+        </header>
+        <p className="text-xs text-muted-foreground">
+          Search and Analytics use the same complete dates, ending three days
+          ago. Changes compare with the previous equal period.
+        </p>
 
         <WorkspaceMergeBanner />
 
@@ -144,15 +183,40 @@ export function DashboardPage({ projectId }: { projectId: string }) {
           activation={activation}
         />
 
-        {/* Every card is half width on large screens (only the checklist spans).
-          Cards with data render before setup pitches and empty states. */}
-        <div className="grid items-start gap-5 lg:grid-cols-2">
-          {sort(cards, (a, b) => Number(b.hasData) - Number(a.hasData)).map(
-            (card) => (
-              <div key={card.key}>{card.node}</div>
-            ),
-          )}
+        {activationQuery.isError ? (
+          <QueryError
+            error={activationQuery.error}
+            fallback="Failed to refresh dashboard"
+            onRetry={() => void activationQuery.refetch()}
+            isRetrying={activationQuery.isFetching}
+          />
+        ) : null}
+
+        {overviewQuery.isError ? (
+          <QueryError
+            error={overviewQuery.error}
+            fallback="Failed to load site audit and backlink summaries"
+            onRetry={() => void overviewQuery.refetch()}
+            isRetrying={overviewQuery.isFetching}
+          />
+        ) : null}
+
+        {/* Stable card order keeps each report in the same place.
+          Cards in a row stretch to the same height. */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          {cards.map((card) => (
+            <Fragment key={card.key}>{card.node}</Fragment>
+          ))}
         </div>
+        {ga4Connected ? (
+          <DashboardInsights
+            key={projectId}
+            projectId={projectId}
+            days={days}
+            gscConnected={gscConnected}
+          />
+        ) : null}
+        <VersionStatus compact />
       </div>
     </div>
   );

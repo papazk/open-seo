@@ -49,7 +49,8 @@ export type GscDateRange = (typeof GSC_DATE_RANGES)[number];
 
 export type GscPerformanceFilter = {
   dimension: GscDimension;
-  operator: GscFilterOperator;
+  // Internal domain scoping uses RE2 without expanding the shipped tool schema.
+  operator: GscFilterOperator | "includingRegex";
   expression: string;
 };
 

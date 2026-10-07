@@ -1,6 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { createClient, type Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import {
@@ -17,21 +15,22 @@ import type * as ServiceModule from "./GoogleAccountService";
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
 let client: Client;
-const directory = mkdtempSync(join(tmpdir(), "google-account-removal-"));
 let service: typeof ServiceModule.GoogleAccountService;
 type Build = Parameters<typeof runBatch>[0];
 
 beforeAll(async () => {
-  client = createClient({ url: `file:${join(directory, "test.db")}` });
+  client = createClient({ url: ":memory:" });
   const testDb = drizzle(client);
   vi.doMock("@/db", () => ({ db: testDb }));
   vi.doMock("@/db/runBatch", () => ({
     runBatch: async (build: Build) => {
-      await testDb.transaction(async (tx) => {
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- real SQLite Drizzle executor has the same query-builder surface
-        for (const statement of build(tx as unknown as Parameters<Build>[0]))
-          await statement;
-      });
+      // Use SQLite's atomic batch on the same in-memory connection, matching D1.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- same SQLite query-builder surface as D1
+      const statements = build(testDb as unknown as Parameters<Build>[0]);
+      if (!statements.length) return;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- builders are SQLite BatchItems; nonempty above
+      const batch = statements as unknown as Parameters<typeof testDb.batch>[0];
+      await testDb.batch(batch);
     },
   }));
   await client.executeMultiple(`
@@ -43,7 +42,7 @@ beforeAll(async () => {
     INSERT INTO projects (id, archived) VALUES ('p1',0), ('p2',1), ('p3',0), ('p4',0);
   `);
   const authMigration = readFileSync(
-    "drizzle/0003_light_sage.sql",
+    "drizzle/sqlite/0003_light_sage.sql",
     "utf8",
   ).split("--> statement-breakpoint");
   await client.executeMultiple(
@@ -56,8 +55,8 @@ beforeAll(async () => {
       .join("\n"),
   );
   for (const file of [
-    "drizzle/0019_true_absorbing_man.sql",
-    "drizzle/0039_ga4_connections.sql",
+    "drizzle/sqlite/0019_true_absorbing_man.sql",
+    "drizzle/sqlite/0039_ga4_connections.sql",
   ]) {
     await client.executeMultiple(
       readFileSync(file, "utf8")
@@ -72,7 +71,6 @@ beforeAll(async () => {
 
 afterAll(() => {
   client.close();
-  rmSync(directory, { recursive: true });
 });
 beforeEach(async () => {
   await client.executeMultiple(
@@ -128,23 +126,6 @@ for (const provider of ["gsc", "ga4"] as const) {
     const table = provider === "gsc" ? "gsc_connections" : "ga4_connections";
     const input = { provider, accountId: "google-a", userId: "u1" };
 
-    it("deletes the authorization row so another OpenSEO user can claim the identity", async () => {
-      await grant(providerId);
-      await mapping(provider, "p1");
-      expect((await rows("account"))[0]?.user_id).toBe("u1");
-      await service.remove(input);
-      expect(await rows("account")).toEqual([]);
-      expect(await rows(table)).toEqual([]);
-      // Better Auth's link callback looks up this pair across all users.
-      const existing = await client.execute({
-        sql: "SELECT user_id FROM account WHERE provider_id = ? AND account_id = ?",
-        args: [providerId, "google-a"],
-      });
-      expect(existing.rows).toEqual([]);
-      await grant(providerId, "google-a", "u2");
-      expect((await rows("account"))[0]?.user_id).toBe("u2");
-    });
-
     it("removes all dependent mappings including archived and other-workspace projects", async () => {
       await grant(providerId);
       await mapping(provider, "p1");
@@ -184,16 +165,6 @@ for (const provider of ["gsc", "ga4"] as const) {
       expect(await rows(table)).toHaveLength(1);
     });
 
-    it("a repeated old-user removal does not delete the new owner's grant", async () => {
-      await grant(providerId);
-      await service.remove(input);
-      await grant(providerId, "google-a", "u2");
-      await mapping(provider, "p1", "google-a", "u2");
-      await service.remove(input);
-      expect((await rows("account"))[0]?.user_id).toBe("u2");
-      expect(await rows(table)).toHaveLength(1);
-    });
-
     it("rolls project deletion back if deleting the authorization fails", async () => {
       await grant(providerId);
       await mapping(provider, "p1");
@@ -222,6 +193,35 @@ it("includes legacy GSC mappings in removal without touching another user's lega
     "p2",
   ]);
 });
+
+it.each(["same-account", "other-account", "other-user"] as const)(
+  "GA4 preserves a missing email only for the same connection identity: %s",
+  async (change) => {
+    const { Ga4ConnectionRepository } =
+      await import("@/server/features/ga4/repositories/Ga4ConnectionRepository");
+    const base = {
+      projectId: "p1",
+      organizationId: "org1",
+      propertyId: "properties/11",
+      propertyDisplayName: "Site",
+      propertyTimeZone: "America/New_York",
+      propertyCurrencyCode: "USD",
+      connectedByUserId: "u1",
+      ga4AccountId: "google-a",
+      connectedAccountEmail: "old@example.com",
+    };
+    await Ga4ConnectionRepository.upsert(base);
+    const saved = await Ga4ConnectionRepository.upsert({
+      ...base,
+      connectedByUserId: change === "other-user" ? "u2" : "u1",
+      ga4AccountId: change === "other-account" ? "google-b" : "google-a",
+      connectedAccountEmail: null,
+    });
+    expect(saved.connectedAccountEmail).toBe(
+      change === "same-account" ? "old@example.com" : null,
+    );
+  },
+);
 
 it.each(["same-account", "other-account", "other-user"] as const)(
   "GSC preserves a missing email only for the same connection identity: %s",

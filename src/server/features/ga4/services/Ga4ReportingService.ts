@@ -40,6 +40,7 @@ export type Ga4ReportInput = {
   ecommerceOnlyWithTransactions?: boolean;
   audienceBreakdown?: "device" | "country" | "new_vs_returning";
   comparePreviousPeriod?: boolean;
+  hostName?: string;
 };
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

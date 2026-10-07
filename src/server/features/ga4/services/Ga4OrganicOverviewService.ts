@@ -14,6 +14,7 @@ type Ga4OrganicOverviewInput = {
   startDate?: string;
   endDate?: string;
   trend?: "daily" | "weekly";
+  hostName?: string;
 };
 
 function metricComparison(
@@ -81,14 +82,19 @@ async function getOrganicOverview(
     opts.now,
   );
   const previousDateRange = previousPeriod(dateRange.resolvedDateRange);
-  const currentRequest = buildGa4OverviewRequest(dateRange.resolvedDateRange);
+  const currentRequest = buildGa4OverviewRequest({
+    ...dateRange.resolvedDateRange,
+    hostName: input.hostName,
+  });
   const previousRequest = buildGa4OverviewRequest({
     ...previousDateRange,
+    hostName: input.hostName,
   });
   const trend = input.trend ?? "daily";
   const trendRequest = buildGa4OverviewRequest({
     ...dateRange.resolvedDateRange,
     trend,
+    hostName: input.hostName,
   });
   const client = createGa4DataClient({
     userId: connection.connectedByUserId,

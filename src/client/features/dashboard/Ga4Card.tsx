@@ -1,25 +1,31 @@
+import { CardShell } from "@/client/components/CardShell";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { Area, AreaChart, XAxis, YAxis } from "recharts";
 import {
-  Area,
-  AreaChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  CardShell,
   moreDetailsClass,
-  PercentDelta,
-  Stat,
+  StatGridSkeleton,
 } from "@/client/features/dashboard/cardParts";
+import { StatTile } from "@/client/components/StatTile";
 import { Ga4ConnectCard } from "@/client/features/dashboard/Ga4ConnectCard";
 import {
   formatCount,
   formatCtr,
 } from "@/client/features/search-performance/SearchPerformanceColumns";
 import { getGa4DashboardReport } from "@/serverFunctions/ga4";
+import { Skeleton } from "@/client/components/ui/skeleton";
+import { Button } from "@/client/components/ui/button";
+import type { DashboardDays } from "@/shared/dashboard-period";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/client/components/ui/chart";
+
+const sessionsChartConfig = {
+  sessions: { label: "Sessions", color: "var(--color-primary)" },
+} satisfies ChartConfig;
 
 function formatTrendDay(date: string): string {
   // Construct in local time: Date.parse("2026-08-01") is UTC midnight, which
@@ -38,62 +44,53 @@ function statValue(
   return value === null ? "—" : format(value);
 }
 
-function statDelta(current: number | null, previous: number | null) {
-  return current !== null && previous !== null ? (
-    <PercentDelta current={current} previous={previous} />
-  ) : undefined;
-}
-
-function SessionsTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ value: number }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-md border border-base-300 bg-base-100 px-3 py-2 shadow-sm">
-      <p className="text-xs text-base-content/60">
-        {label ? formatTrendDay(label) : ""}
-      </p>
-      <p className="text-sm font-medium tabular-nums">
-        {formatCount(payload[0].value)} sessions
-      </p>
-    </div>
-  );
-}
-
 export function Ga4Card({
   projectId,
   connected,
+  days = 28,
 }: {
   projectId: string;
   connected: boolean;
+  days?: DashboardDays;
 }) {
   const reportQuery = useQuery({
-    queryKey: ["dashboardGa4Report", projectId],
-    queryFn: () => getGa4DashboardReport({ data: { projectId } }),
+    queryKey: ["dashboardGa4Report", projectId, days],
+    queryFn: () => getGa4DashboardReport({ data: { projectId, days } }),
     enabled: connected,
   });
+  const report = reportQuery.data;
 
   // Not connected (or a dead grant discovered by the report call): the
   // connection card sells and runs the whole flow itself.
-  if (!connected || (reportQuery.data && !reportQuery.data.connected)) {
+  if (!connected || (report && !report.connected)) {
     return <Ga4ConnectCard projectId={projectId} connected={connected} />;
   }
 
-  const report = reportQuery.data;
+  if (report?.domainRequired)
+    return (
+      <CardShell title="Organic traffic">
+        <p className="text-sm text-muted-foreground">
+          Set a valid project domain to report Analytics for this website.
+        </p>
+        <Link
+          to="/p/$projectId/settings"
+          params={{ projectId }}
+          className="text-sm underline underline-offset-4"
+        >
+          Set project domain
+        </Link>
+      </CardShell>
+    );
 
+  // The empty state covers null sessions (no report row) and 0: a zero-session
+  // period would otherwise render an all-zero flatline chart in an empty box.
   return (
     <CardShell
       title="Organic traffic"
-      stamp="Google Analytics · last 28 days"
+      stamp={`Google Analytics · ${days} complete days`}
       action={
         <Link
-          to="/p/$projectId/settings"
+          to="/p/$projectId/settings/integrations"
           params={{ projectId }}
           hash="google-analytics"
           className={moreDetailsClass}
@@ -102,84 +99,112 @@ export function Ga4Card({
         </Link>
       }
     >
-      {reportQuery.isPending ? (
-        <div className="space-y-3" aria-busy>
-          <div className="grid grid-cols-2 gap-3">
-            {Array.from({ length: 4 }, (_, i) => (
-              <div key={i} className="skeleton h-16" />
-            ))}
-          </div>
-          <div className="skeleton h-24" />
+      {reportQuery.isError ? (
+        <div className="space-y-2 text-sm">
+          <p>Couldn&rsquo;t load Google Analytics data.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={reportQuery.isFetching}
+            onClick={() => void reportQuery.refetch()}
+          >
+            {reportQuery.isFetching ? "Retrying…" : "Retry"}
+          </Button>
         </div>
-      ) : reportQuery.isError ? (
-        <p className="text-sm text-base-content/60">
-          Couldn&rsquo;t load Google Analytics data. Try again shortly.
+      ) : !report ? (
+        <div className="space-y-3" aria-busy>
+          <StatGridSkeleton tileClassName="h-16" />
+          <Skeleton className="h-24" />
+        </div>
+      ) : !report.totals.sessions ? (
+        <p className="text-sm text-muted-foreground">
+          {report.hasLimitedData ? (
+            "Google applied reporting limits. Traffic availability could not be confirmed for this period."
+          ) : (
+            <>
+              No organic search traffic recorded in these {days} complete days.
+              Connecting Analytics does not create historical data.
+            </>
+          )}
         </p>
-      ) : report?.connected ? (
-        // Covers null (no report row) and 0: a zero-session period would
-        // otherwise render an all-zero flatline chart in an empty box.
-        !report.totals.sessions ? (
-          <p className="text-sm text-base-content/60">
-            No organic search traffic recorded in the last 28 days yet.
-          </p>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Stat
-                label="Sessions"
-                value={statValue(report.totals.sessions, formatCount)}
-                sub={statDelta(
-                  report.totals.sessions,
-                  report.prevTotals.sessions,
-                )}
-              />
-              <Stat
-                label="Active users"
-                value={statValue(report.totals.activeUsers, formatCount)}
-                sub={statDelta(
-                  report.totals.activeUsers,
-                  report.prevTotals.activeUsers,
-                )}
-              />
-              <Stat
-                label="Engagement rate"
-                value={statValue(report.totals.engagementRate, formatCtr)}
-              />
-              <Stat
-                label="Key events"
-                value={statValue(report.totals.keyEvents, formatCount)}
-                sub={statDelta(
-                  report.totals.keyEvents,
-                  report.prevTotals.keyEvents,
-                )}
-              />
-            </div>
-            <div className="h-24">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={report.trend}
-                  margin={{ top: 4, right: 0, bottom: 0, left: 0 }}
-                >
-                  <XAxis dataKey="date" hide />
-                  <YAxis hide domain={[0, "auto"]} />
-                  <Tooltip
-                    content={<SessionsTooltip />}
-                    cursor={{ stroke: "currentColor", strokeOpacity: 0.2 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="sessions"
-                    stroke="var(--color-primary)"
-                    strokeWidth={2}
-                    fill="var(--color-primary)"
-                    fillOpacity={0.08}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+      ) : (
+        <div className="space-y-4">
+          {report.hasLimitedData ? (
+            <p className="text-xs text-muted-foreground">
+              Google applied reporting limits. Some figures may be incomplete.
+            </p>
+          ) : null}
+          <div className="grid grid-cols-2 gap-3">
+            <StatTile
+              label="Sessions"
+              value={statValue(report.totals.sessions, formatCount)}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.sessions,
+                      previous: report.prevTotals.sessions,
+                    }
+              }
+            />
+            <StatTile
+              label="Active users"
+              value={statValue(report.totals.activeUsers, formatCount)}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.activeUsers,
+                      previous: report.prevTotals.activeUsers,
+                    }
+              }
+            />
+            <StatTile
+              label="Engagement rate"
+              value={statValue(report.totals.engagementRate, formatCtr)}
+            />
+            <StatTile
+              label="Key events"
+              value={statValue(report.totals.keyEvents, formatCount)}
+              delta={
+                report.hasLimitedData
+                  ? undefined
+                  : {
+                      current: report.totals.keyEvents,
+                      previous: report.prevTotals.keyEvents,
+                    }
+              }
+            />
           </div>
-        )
-      ) : null}
+          <ChartContainer config={sessionsChartConfig} className="h-24">
+            <AreaChart
+              data={report.trend}
+              margin={{ top: 4, right: 0, bottom: 0, left: 0 }}
+            >
+              <XAxis dataKey="date" hide />
+              <YAxis hide domain={[0, "auto"]} />
+              <ChartTooltip
+                content={
+                  <ChartTooltipContent
+                    labelFormatter={(label: unknown) =>
+                      typeof label === "string" ? formatTrendDay(label) : ""
+                    }
+                    valueFormatter={(value) => formatCount(Number(value))}
+                  />
+                }
+              />
+              <Area
+                type="monotone"
+                dataKey="sessions"
+                stroke="var(--color-sessions)"
+                strokeWidth={2}
+                fill="var(--color-sessions)"
+                fillOpacity={0.08}
+              />
+            </AreaChart>
+          </ChartContainer>
+        </div>
+      )}
     </CardShell>
   );
 }
