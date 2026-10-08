@@ -17,3 +17,6 @@ drizzle/pg/
 planning/
 src/worker-configuration.d.ts
 web/
+# Byte-for-byte deployed website archive, including hash-pinned fixtures.
+# Its own npm run check validates syntax, generated parity and behavior.
+maintainer-tools/website-analytics/

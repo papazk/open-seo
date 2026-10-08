@@ -1,1 +1,1 @@
-{"private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","generate":"node generate-source.mjs"},"devDependencies":{"jsdom":"^26.1.0"}}
+{"private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","generate":"node generate-source.mjs","check":"node --check consent.js && node --check consent-source.mjs && node --check enquiry-script.mjs && node --check overlay.mjs && node --check wrapper.mjs && node --check generate-source.mjs && npm test"},"devDependencies":{"jsdom":"^26.1.0"}}
