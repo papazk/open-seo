@@ -30,6 +30,14 @@ for(const encoding of ['gzip','br'])test(`already instrumented HTML preserves th
  assert.deepEqual(Object.fromEntries(result.headers),headers);
  assert.equal(await result.text(),html);
 });
+test('rewritten HTML releases the unused original body while preserving the generated page',async()=>{
+ const response=new Response('<html><body><main>Public content</main></body></html>',{headers:{'content-type':'text/html','content-encoding':'gzip','content-length':'123','etag':'"original"'}});
+ const result=await overlay(response,new Request(env.SEO_ANALYTICS_ORIGIN+'/kontakt/'),env);
+ assert.notEqual(result,response);
+ assert.equal(response.bodyUsed,true,'the unused tee branch must be released before returning rewritten HTML');
+ const html=await result.text();assert.match(html,/Public content/);assert.match(html,/seo-analytics-loader/);
+ for(const name of ['content-encoding','content-length','etag'])assert.equal(result.headers.has(name),false);
+});
 test('HTML script references bypass the previously cached uninstrumented URL exactly once',async()=>{
  const path='/_astro/ContactForm.astro_astro_type_script_index_0_lang.B84NqIdn.js';
  const worker=wrap({fetch(){return new Response(`<html><body><script type="module" src="${path}"></script><script src='${env.SEO_ANALYTICS_ORIGIN+path}'></script><script src="${path}?unknown=1"></script><script src="https://other.example${path}"></script><script src="/_astro/CostCalculator.js"></script></body></html>`,{headers:{'content-type':'text/html'}});}});
