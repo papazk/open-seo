@@ -12,7 +12,8 @@
     "web",
     "src/routeTree.gen.ts",
     "src/worker-configuration.d.ts",
-    "scripts"
+    "scripts",
+    "maintainer-tools/website-analytics"
   ],
   "rules": {
     "react/react-in-jsx-scope": "off",

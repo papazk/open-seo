@@ -33,11 +33,17 @@
     // Alchemy state/bundle artifacts (gitignored)
     "!.alchemy/**",
     "!tests/badseo/**",
+    // Standalone deployed website archive; its own package owns deps/tests.
+    "!maintainer-tools/website-analytics/**",
     // Skill-bundled scripts, run by hand from the skill's instructions
     "!.agents/**",
     "!.claude/**",
   ],
-  "ignore": ["drizzle/remote-d1.config.ts"],
+  "ignore": [
+    "drizzle/remote-d1.config.ts",
+    // Test plugin globs also discover this independent package's fixtures.
+    "maintainer-tools/website-analytics/**",
+  ],
   // Disable Drizzle plugin - it tries to load drizzle/sqlite.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": [
