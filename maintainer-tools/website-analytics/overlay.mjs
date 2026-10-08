@@ -14,8 +14,8 @@ export function scriptResponse(request) {
 }
 export async function overlay(response, request, env) {
   if (!eligible(request,env) || !['GET','HEAD'].includes(request.method) || response.status !== 200 || !response.headers.get('content-type')?.includes('text/html') || request.method === 'HEAD' || response.headers.has('set-cookie')) return response;
-  let html=await response.text();
-  if (html.includes('id="seo-analytics-loader"')) return new Response(html,response);
+  let html=await response.clone().text();
+  if (html.includes('id="seo-analytics-loader"')) return response;
   html=versionEnquiryScriptReferences(html,request,env);
   const de=/<html\b[^>]*\blang=["']de(?:[-"'])/i.test(html);
   const mk=/<html\b[^>]*\blang=["']mk(?:[-"'])/i.test(html);
