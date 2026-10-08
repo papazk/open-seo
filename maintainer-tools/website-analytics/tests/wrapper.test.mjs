@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {wrap} from '../wrapper.mjs';
-import {scriptPath} from '../overlay.mjs';
+import {overlay,scriptPath} from '../overlay.mjs';
 import generated from '../consent-source.mjs';
 import {JSDOM} from 'jsdom';
 const env={SEO_ANALYTICS_ORIGIN:'https://poolbaustpolten.at',SEO_ANALYTICS_MEASUREMENT_ID:'G-ABC12345',SEO_ENQUIRY_SCRIPTS_JSON:JSON.stringify([{path:'/_astro/ContactForm.astro_astro_type_script_index_0_lang.B84NqIdn.js',sha256:'09bbcabeb3e0c3d134a08192d87fe914488d6e9e7be83701a1bd89a1fe01c792',adapter:'pool-v1'}])};
@@ -19,6 +19,16 @@ test('wrapper serves new consent script, transforms approved JS, and preserves b
 });
 test('generated deployable consent source exactly matches human-editable source',()=>{
  assert.equal(generated,readFileSync(new URL('../consent.js',import.meta.url),'utf8'));
+});
+for(const encoding of ['gzip','br'])test(`already instrumented HTML preserves the original ${encoding} response and readable body`,async()=>{
+ const html='<html><body><script id="seo-analytics-loader"></script></body></html>';
+ const headers={'content-type':'text/html','content-encoding':encoding,'content-length':'123','etag':'"original"','cache-control':'public, max-age=300'};
+ const response=new Response(html,{headers});
+ const result=await overlay(response,new Request(env.SEO_ANALYTICS_ORIGIN+'/kontakt/'),env);
+ assert.equal(result,response,'already instrumented responses must be returned unchanged');
+ assert.equal(response.bodyUsed,false,'inspection must not consume the original body');
+ assert.deepEqual(Object.fromEntries(result.headers),headers);
+ assert.equal(await result.text(),html);
 });
 test('HTML script references bypass the previously cached uninstrumented URL exactly once',async()=>{
  const path='/_astro/ContactForm.astro_astro_type_script_index_0_lang.B84NqIdn.js';
