@@ -3,11 +3,20 @@ import { targets } from "./targets";
 import { ConversionMonitor } from "./ConversionMonitor";
 
 const mocks = vi.hoisted(() => ({
-  report: vi.fn(),
+  report:
+    vi.fn<(input: { dimensions: { name: string }[] }) => Promise<unknown>>(),
   connection: vi.fn(),
   get: vi.fn(),
   put: vi.fn(),
-  notify: vi.fn(),
+  notify:
+    vi.fn<
+      (input: {
+        id: string;
+        issues: string[];
+        totals: Record<string, number>;
+        setup?: boolean;
+      }) => Promise<{ status: string }>
+    >(),
 }));
 vi.mock("cloudflare:workers", () => ({
   env: {

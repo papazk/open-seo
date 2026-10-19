@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import { Redacted } from "effect";
 import { unstable_readConfig } from "wrangler";
 import { z } from "zod";
+import { monitorCrons, monitorAlertBinding } from "./alchemy.monitor.ts";
 import {
   emailAccessGate,
   HOSTED_PROD_STAGE,
@@ -476,14 +477,7 @@ export default Alchemy.Stack(
           ? { mode: "smart" }
           : undefined,
       // Scheduled rank checks — src/server.ts `scheduled` handler.
-      crons:
-        stage === "selfhost"
-          ? [
-              ...wrangler.triggers.crons,
-              "23 * * * *",
-              ...(monitorBootstrap ? ["* * * * *"] : []),
-            ]
-          : wrangler.triggers.crons,
+      crons: monitorCrons(stage, wrangler.triggers.crons, monitorBootstrap),
       env: {
         ...resources,
         ...dataEnv,
@@ -560,14 +554,7 @@ export default Alchemy.Stack(
 
     if (stage === "selfhost") {
       yield* app.bind`conversion-monitor-alerts`({
-        bindings: [
-          {
-            type: "service",
-            name: "MONITOR_ALERTS",
-            service: "seo-portfolio-dashboard-connected",
-            entrypoint: "OpenSeoMonitorAlerts",
-          },
-        ],
+        bindings: [monitorAlertBinding],
       });
     }
     return { url: app.url.as<string>() };

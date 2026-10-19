@@ -33,6 +33,22 @@ const stateSchema = z.object({
   delivery: z.string().default("idle"),
   failureEpisode: z.number().int().nonnegative().default(0),
 });
+const notifierSchema = z.custom<{
+  notify: (input: unknown) => Promise<unknown>;
+}>(
+  (value) =>
+    typeof value === "object" &&
+    value !== null &&
+    "notify" in value &&
+    typeof value.notify === "function",
+);
+const notificationResultSchema = z.object({ status: z.string() });
+function getNotifier() {
+  const binding: unknown = Reflect.get(env, "MONITOR_ALERTS");
+  const parsed = notifierSchema.safeParse(binding);
+  return parsed.success ? parsed.data : null;
+}
+
 type State = z.infer<typeof stateSchema>;
 const key = (id: string) => `conversion-monitor:v1:${id}`;
 const startDate = "2026-10-07";
@@ -84,6 +100,99 @@ async function installation(domain: string): Promise<State["installation"]> {
   }
 }
 
+async function readReport(
+  target: (typeof targets)[number],
+  now: Date,
+): Promise<z.infer<typeof reportSchema>> {
+  const connection = await Ga4ConnectionRepository.getByProjectId(
+    target.projectId,
+  );
+  if (!connection) throw new Error("not_connected");
+  if (connection.propertyId !== `properties/${target.propertyId}`)
+    throw new Error("property_mapping_changed");
+  const endDate = shiftGa4Date(
+    ga4DateInTimeZone(now, connection.propertyTimeZone),
+    -1,
+  );
+  const client = createGa4DataClient({
+    userId: connection.connectedByUserId,
+    ga4AccountId: connection.ga4AccountId,
+    propertyId: connection.propertyId,
+  });
+  const response = await client.runReport({
+    dateRanges: [{ startDate, endDate }],
+    dimensions: [{ name: "date" }, { name: "eventName" }],
+    metrics: [{ name: "eventCount" }],
+    dimensionFilter: {
+      filter: {
+        fieldName: "eventName",
+        inListFilter: {
+          values: [...target.expectedEvents, "page_view"],
+          caseSensitive: true,
+        },
+      },
+    },
+    offset: "0",
+    limit: "100000",
+    orderBys: [],
+    keepEmptyRows: false,
+    returnPropertyQuota: true,
+  });
+  const rows = response.rows ?? [];
+  if (
+    (response.rowCount ?? 0) !== rows.length ||
+    response.metadata?.dataLossFromOtherRow ||
+    response.metadata?.subjectToThresholding ||
+    response.metadata?.samplingMetadatas?.length ||
+    response.metadata?.schemaRestrictionResponse?.activeMetricRestrictions
+      ?.length
+  )
+    throw new Error("report_incomplete");
+  if (
+    response.dimensionHeaders?.map((h) => h.name).join(",") !==
+      "date,eventName" ||
+    response.metricHeaders?.map((h) => h.name).join(",") !== "eventCount"
+  )
+    throw new Error("report_incomplete");
+  const counts: Record<string, number> = {},
+    totals: Record<string, number> = Object.fromEntries(
+      target.expectedEvents.map((e) => [e, 0]),
+    );
+  let pageViews = 0;
+  for (const row of rows) {
+    const date = row.dimensionValues?.[0]?.value,
+      event = row.dimensionValues?.[1]?.value;
+    const value = Number(row.metricValues?.[0]?.value);
+    if (
+      !date ||
+      !/^\d{8}$/.test(date) ||
+      date < startDate.replaceAll("-", "") ||
+      date > endDate.replaceAll("-", "") ||
+      !event ||
+      ![...target.expectedEvents, "page_view"].includes(event) ||
+      !Number.isSafeInteger(value) ||
+      value < 0
+    )
+      throw new Error("report_incomplete");
+    if (event === "page_view") {
+      pageViews += value;
+      continue;
+    }
+    const datedKey = `${date}/${event}`;
+    if (datedKey in counts) throw new Error("report_incomplete");
+    counts[datedKey] = value;
+    totals[event] += value;
+  }
+  return {
+    startDate,
+    endDate,
+    checkedAt: now.toISOString(),
+    timeZone: connection.propertyTimeZone,
+    counts,
+    totals,
+    pageViews,
+  };
+}
 async function checkProject(
   projectId: string,
   now = new Date(),
@@ -107,84 +216,8 @@ async function checkProject(
     failureEpisode: previous?.failureEpisode ?? 0,
   };
   try {
-    const connection = await Ga4ConnectionRepository.getByProjectId(projectId);
-    if (!connection) throw new Error("not_connected");
-    if (connection.propertyId !== `properties/${target.propertyId}`)
-      throw new Error("property_mapping_changed");
-    const endDate = shiftGa4Date(
-      ga4DateInTimeZone(now, connection.propertyTimeZone),
-      -1,
-    );
-    const client = createGa4DataClient({
-      userId: connection.connectedByUserId,
-      ga4AccountId: connection.ga4AccountId,
-      propertyId: connection.propertyId,
-    });
-    const response = await client.runReport({
-      dateRanges: [{ startDate, endDate }],
-      dimensions: [{ name: "date" }, { name: "eventName" }],
-      metrics: [{ name: "eventCount" }],
-      dimensionFilter: {
-        filter: {
-          fieldName: "eventName",
-          inListFilter: {
-            values: [...target.expectedEvents, "page_view"],
-            caseSensitive: true,
-          },
-        },
-      },
-      offset: "0",
-      limit: "100000",
-      orderBys: [],
-      keepEmptyRows: false,
-      returnPropertyQuota: true,
-    });
-    const rows = response.rows ?? [];
-    if (
-      (response.rowCount ?? 0) !== rows.length ||
-      response.metadata?.dataLossFromOtherRow ||
-      response.metadata?.subjectToThresholding ||
-      response.metadata?.samplingMetadatas?.length ||
-      response.metadata?.schemaRestrictionResponse?.activeMetricRestrictions
-        ?.length
-    )
-      throw new Error("report_incomplete");
-    if (
-      response.dimensionHeaders?.map((h) => h.name).join(",") !==
-        "date,eventName" ||
-      response.metricHeaders?.map((h) => h.name).join(",") !== "eventCount"
-    )
-      throw new Error("report_incomplete");
-    const counts: Record<string, number> = {},
-      totals: Record<string, number> = Object.fromEntries(
-        target.expectedEvents.map((e) => [e, 0]),
-      );
-    let pageViews = 0;
-    for (const row of rows) {
-      const date = row.dimensionValues?.[0]?.value,
-        event = row.dimensionValues?.[1]?.value;
-      const value = Number(row.metricValues?.[0]?.value);
-      if (
-        !date ||
-        !/^\d{8}$/.test(date) ||
-        date < startDate.replaceAll("-", "") ||
-        date > endDate.replaceAll("-", "") ||
-        !event ||
-        ![...target.expectedEvents, "page_view"].includes(event) ||
-        !Number.isSafeInteger(value) ||
-        value < 0
-      )
-        throw new Error("report_incomplete");
-      if (event === "page_view") {
-        pageViews += value;
-        continue;
-      }
-      const datedKey = `${date}/${event}`;
-      if (datedKey in counts) throw new Error("report_incomplete");
-      counts[datedKey] = value;
-      totals[event] += value;
-    }
-    for (const [datedKey, value] of Object.entries(counts)) {
+    result.report = await readReport(target, now);
+    for (const [datedKey, value] of Object.entries(result.report.counts)) {
       const increase = Math.max(0, value - (result.highWater[datedKey] ?? 0));
       if (increase) {
         const event = datedKey.split("/")[1];
@@ -195,15 +228,6 @@ async function checkProject(
         value,
       );
     }
-    result.report = {
-      startDate,
-      endDate,
-      checkedAt: now.toISOString(),
-      timeZone: connection.propertyTimeZone,
-      counts,
-      totals,
-      pageViews,
-    };
   } catch (error) {
     const known = [
       "not_connected",
@@ -223,9 +247,9 @@ async function checkProject(
   ].filter(Boolean);
   let notifiedCounts: Record<string, number> = {};
   try {
-    notifiedCounts = countsSchema.parse(
-      JSON.parse(result.lastNotified ?? "{}").highWater ?? {},
-    );
+    notifiedCounts = z
+      .object({ highWater: countsSchema })
+      .parse(JSON.parse(result.lastNotified ?? "{}") as unknown).highWater;
   } catch {
     /* Treat invalid notification state as unacknowledged. */
   }
@@ -261,9 +285,7 @@ async function checkProject(
 
 async function deliver(result: State, now: Date) {
   if (!result.alert) return;
-  const notifier = Reflect.get(env, "MONITOR_ALERTS") as
-    | { notify: (input: unknown) => Promise<{ status: string }> }
-    | undefined;
+  const notifier = getNotifier();
   if (!notifier) {
     result.delivery = "unconfigured";
   } else {
@@ -281,17 +303,19 @@ async function deliver(result: State, now: Date) {
           ? null
           : `tracking_${result.installation}`,
       ].filter(Boolean);
-      const response = await notifier.notify({
-        id,
-        domain: result.domain,
-        propertyId: result.propertyId,
-        startDate,
-        endDate:
-          result.report?.endDate ??
-          shiftGa4Date(ga4DateInTimeZone(now, "Europe/Berlin"), -1),
-        totals: result.report?.totals ?? {},
-        issues,
-      });
+      const response = notificationResultSchema.parse(
+        await notifier.notify({
+          id,
+          domain: result.domain,
+          propertyId: result.propertyId,
+          startDate,
+          endDate:
+            result.report?.endDate ??
+            shiftGa4Date(ga4DateInTimeZone(now, "Europe/Berlin"), -1),
+          totals: result.report?.totals ?? {},
+          issues,
+        }),
+      );
       result.delivery = [
         "accepted",
         "uncertain",
@@ -315,9 +339,7 @@ async function deliver(result: State, now: Date) {
 async function testAlerts(now = new Date()) {
   const setupKey = "conversion-monitor:setup-test:v1";
   if ((await env.KV.get(setupKey)) === "accepted") return "accepted";
-  const notifier = Reflect.get(env, "MONITOR_ALERTS") as
-    | { notify: (input: unknown) => Promise<{ status: string }> }
-    | undefined;
+  const notifier = getNotifier();
   if (!notifier) return "unconfigured";
   // Fixed id makes interrupted bootstrap retries safe at the private SQL outbox.
   const id = Array.from(
@@ -327,16 +349,18 @@ async function testAlerts(now = new Date()) {
     (b) => b.toString(16).padStart(2, "0"),
   ).join("");
   const target = targets[0];
-  const result = await notifier.notify({
-    id,
-    setup: true,
-    domain: target.domain,
-    propertyId: target.propertyId,
-    startDate,
-    endDate: shiftGa4Date(ga4DateInTimeZone(now, "Europe/Berlin"), -1),
-    totals: {},
-    issues: [],
-  });
+  const result = notificationResultSchema.parse(
+    await notifier.notify({
+      id,
+      setup: true,
+      domain: target.domain,
+      propertyId: target.propertyId,
+      startDate,
+      endDate: shiftGa4Date(ga4DateInTimeZone(now, "Europe/Berlin"), -1),
+      totals: {},
+      issues: [],
+    }),
+  );
   if (result.status === "accepted") await env.KV.put(setupKey, "accepted");
   return result.status;
 }
