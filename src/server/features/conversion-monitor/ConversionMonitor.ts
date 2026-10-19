@@ -64,7 +64,7 @@ async function installation(domain: string): Promise<State["installation"]> {
   try {
     // Targets are a fixed reviewed allowlist; redirects never escape that origin.
     const response = await fetch(`https://${domain}/`, {
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(12000),
       headers: { "User-Agent": "OpenSEO-TrackingHealth/1.0" },
     });

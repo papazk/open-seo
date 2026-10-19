@@ -286,3 +286,23 @@ test("bootstrap test sends no conversion counts and is skipped after provider ac
   await ConversionMonitor.testAlerts();
   expect(mocks.notify).toHaveBeenCalledTimes(1);
 });
+
+test("uses Worker-supported manual redirects and does not follow site redirects", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://unrelated.example/" },
+        }),
+      ),
+  );
+  const r = await ConversionMonitor.checkProject(projectId);
+  expect(r?.installation).toBe("unverified");
+  expect(fetch).toHaveBeenCalledExactlyOnceWith(
+    "https://optikarodenstock.mk/",
+    expect.objectContaining({ redirect: "manual" }),
+  );
+});
