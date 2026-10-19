@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import { Redacted } from "effect";
 import { unstable_readConfig } from "wrangler";
 import { z } from "zod";
+import { monitorCrons, monitorAlertBinding } from "./alchemy.monitor.ts";
 import {
   emailAccessGate,
   HOSTED_PROD_STAGE,
@@ -311,6 +312,9 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const stage = yield* Alchemy.Stage;
     const prod = stage === HOSTED_PROD_STAGE;
+    const monitorBootstrap =
+      stage === "selfhost" &&
+      (yield* optionalVar("CONVERSION_MONITOR_BOOTSTRAP")) === "true";
     // Fail closed: an unset AUTH_MODE gets the Access-gated mode (matching the
     // app's own default in src/lib/auth-mode.ts), never public hosted signup.
     // hosted/local_noauth must be set explicitly.
@@ -473,11 +477,13 @@ export default Alchemy.Stack(
           ? { mode: "smart" }
           : undefined,
       // Scheduled rank checks — src/server.ts `scheduled` handler.
-      crons: wrangler.triggers.crons,
+      crons: monitorCrons(stage, wrangler.triggers.crons, monitorBootstrap),
       env: {
         ...resources,
         ...dataEnv,
         AUTH_MODE: authMode,
+        CONVERSION_MONITOR_ENABLED: stage === "selfhost" ? "true" : "false",
+        CONVERSION_MONITOR_BOOTSTRAP: monitorBootstrap ? "true" : "false",
         DATABASE_PROVIDER: databaseProvider || "d1",
         BETTER_AUTH_URL: authUrl,
         // The audit worker above always binds BROWSER; the app worker checks
@@ -546,6 +552,11 @@ export default Alchemy.Stack(
       Alchemy.RemovalPolicy.retain(prod),
     );
 
+    if (stage === "selfhost") {
+      yield* app.bind`conversion-monitor-alerts`({
+        bindings: [monitorAlertBinding],
+      });
+    }
     return { url: app.url.as<string>() };
   }),
 );
