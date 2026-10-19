@@ -28,6 +28,8 @@ import { maybeSendSelfHostHeartbeat } from "@/server/lib/self-host-telemetry";
 import { handleGdprStorageErasure } from "@/server/gdpr/storage-erasure";
 import { GDPR_STORAGE_ERASURE_PATH } from "@/shared/gdpr-erasure";
 
+import { ConversionMonitor } from "@/server/features/conversion-monitor/ConversionMonitor";
+
 const startHandler = createStartHandler(defaultStreamHandler);
 
 // The app ships no security response headers of its own, so any third-party
@@ -200,6 +202,11 @@ export default {
     env: Env,
     _ctx: ExecutionContext,
   ) {
+    if (controller.cron === "23 * * * *") {
+      if (Reflect.get(env, "CONVERSION_MONITOR_ENABLED") === "true")
+        await withPgClient(() => ConversionMonitor.run());
+      return;
+    }
     if (controller.cron === MCP_OAUTH_PURGE_CRON) {
       // Only hosted mode runs the OAuth provider (and has OAUTH_KV bound).
       if (isHostedAuthMode(getAuthMode(env.AUTH_MODE))) {

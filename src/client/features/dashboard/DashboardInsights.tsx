@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CardShell } from "@/client/components/CardShell";
 import { Button } from "@/client/components/ui/button";
 import {
+  getConversionMonitor,
   getDashboardMeasurement,
   getDashboardOpportunities,
 } from "@/serverFunctions/dashboardInsights";
@@ -33,6 +34,12 @@ export function DashboardInsights({
     staleTime: 3600000,
     retry: false,
   });
+  const monitor = useQuery({
+    queryKey: ["conversion-monitor", projectId],
+    queryFn: () => getConversionMonitor({ data: { projectId } }),
+    staleTime: 60000,
+    retry: false,
+  });
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <CardShell
@@ -40,6 +47,46 @@ export function DashboardInsights({
         stamp="Google Analytics configuration"
       >
         <div className="space-y-3 text-sm">
+          {monitor.data && (
+            <div className="rounded border p-3 space-y-2" role="status">
+              <p className="font-medium">Daily conversion monitoring</p>
+              {monitor.data.stale && (
+                <p>
+                  Monitoring is overdue. The last check is more than 26 hours
+                  old.
+                </p>
+              )}
+              {monitor.data.alertDelivery && (
+                <p>
+                  Telegram alert pending: {monitor.data.alertDelivery}. Check
+                  notification delivery.
+                </p>
+              )}
+              <p>
+                Tracking installation: {monitor.data.installation}.{" "}
+                {monitor.data.reportError
+                  ? "Analytics check failed; any totals below are from the last successful report."
+                  : "Analytics report checked."}
+              </p>
+              {monitor.data.totals && (
+                <p>
+                  {Object.entries(monitor.data.totals)
+                    .map(([name, count]) => `${name}: ${count}`)
+                    .join(" · ")}
+                </p>
+              )}
+              <p className="text-muted-foreground">
+                {monitor.data.startDate}–{monitor.data.endDate} · All channels.
+                Recent data may still be processing. Installation checks do not
+                verify conversion delivery.
+              </p>
+              <p className="text-xs">
+                Last attempt:{" "}
+                {monitor.data.checkedAt.replace("T", " ").slice(0, 19)} UTC.
+              </p>
+            </div>
+          )}
+
           <p className="text-muted-foreground">
             Check the domain’s web stream and configured key events before
             judging conversions.

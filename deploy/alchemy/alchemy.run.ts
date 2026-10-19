@@ -411,6 +411,7 @@ export default Alchemy.Stack(
         POSTHOG_PUBLIC_KEY: dataEnv.POSTHOG_PUBLIC_KEY,
         POSTHOG_HOST: dataEnv.POSTHOG_HOST,
         AUTH_MODE: authMode,
+        CONVERSION_MONITOR_ENABLED: stage === "selfhost" ? "true" : "false",
         DATABASE_PROVIDER: databaseProvider || "d1",
         ...(prodHyperdrive ? { HYPERDRIVE: prodHyperdrive } : {}),
         // This worker is the code home of the scratchpad DO and the
@@ -473,11 +474,15 @@ export default Alchemy.Stack(
           ? { mode: "smart" }
           : undefined,
       // Scheduled rank checks — src/server.ts `scheduled` handler.
-      crons: wrangler.triggers.crons,
+      crons:
+        stage === "selfhost"
+          ? [...wrangler.triggers.crons, "23 * * * *"]
+          : wrangler.triggers.crons,
       env: {
         ...resources,
         ...dataEnv,
         AUTH_MODE: authMode,
+        CONVERSION_MONITOR_ENABLED: stage === "selfhost" ? "true" : "false",
         DATABASE_PROVIDER: databaseProvider || "d1",
         BETTER_AUTH_URL: authUrl,
         // The audit worker above always binds BROWSER; the app worker checks
@@ -546,6 +551,18 @@ export default Alchemy.Stack(
       Alchemy.RemovalPolicy.retain(prod),
     );
 
+    if (stage === "selfhost") {
+      yield* app.bind`conversion-monitor-alerts`({
+        bindings: [
+          {
+            type: "service",
+            name: "MONITOR_ALERTS",
+            service: "seo-portfolio-dashboard-connected",
+            entrypoint: "OpenSeoMonitorAlerts",
+          },
+        ],
+      });
+    }
     return { url: app.url.as<string>() };
   }),
 );

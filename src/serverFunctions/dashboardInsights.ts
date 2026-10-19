@@ -75,3 +75,25 @@ export const getDashboardOpportunities = createServerFn({ method: "POST" })
       ),
     };
   });
+
+export const getConversionMonitor = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(z.object({ projectId: z.string().min(1) }))
+  .handler(async ({ context }) => {
+    const { ConversionMonitor } =
+      await import("@/server/features/conversion-monitor/ConversionMonitor");
+    const status = await ConversionMonitor.getProject(context.projectId);
+    if (!status) return null;
+    return {
+      domain: status.domain,
+      checkedAt: status.checkedAt,
+      installation: status.installation,
+      reportError: status.reportError,
+      totals: status.report?.totals ?? null,
+      startDate: status.report?.startDate ?? null,
+      endDate: status.report?.endDate ?? null,
+      reportCheckedAt: status.report?.checkedAt ?? null,
+      stale: Date.now() - Date.parse(status.checkedAt) > 26 * 3600000,
+      alertDelivery: status.alert ? status.delivery : null,
+    };
+  });
