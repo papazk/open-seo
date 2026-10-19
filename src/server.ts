@@ -205,6 +205,8 @@ export default {
     const monitorBootstrap =
       controller.cron === "* * * * *" &&
       Reflect.get(env, "CONVERSION_MONITOR_BOOTSTRAP") === "true";
+    // Removed cron triggers can continue briefly while Cloudflare propagates them.
+    if (controller.cron === "* * * * *" && !monitorBootstrap) return;
     if (controller.cron === "23 * * * *" || monitorBootstrap) {
       if (Reflect.get(env, "CONVERSION_MONITOR_ENABLED") === "true")
         await withPgClient(async () => {
