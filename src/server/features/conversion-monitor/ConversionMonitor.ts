@@ -312,6 +312,34 @@ async function deliver(result: State, now: Date) {
   }
   await env.KV.put(key(result.projectId), JSON.stringify(result));
 }
+async function testAlerts(now = new Date()) {
+  const setupKey = "conversion-monitor:setup-test:v1";
+  if ((await env.KV.get(setupKey)) === "accepted") return "accepted";
+  const notifier = Reflect.get(env, "MONITOR_ALERTS") as
+    | { notify: (input: unknown) => Promise<{ status: string }> }
+    | undefined;
+  if (!notifier) return "unconfigured";
+  // Fixed id makes interrupted bootstrap retries safe at the private SQL outbox.
+  const id = Array.from(
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(setupKey)),
+    ),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
+  const target = targets[0];
+  const result = await notifier.notify({
+    id,
+    setup: true,
+    domain: target.domain,
+    propertyId: target.propertyId,
+    startDate,
+    endDate: shiftGa4Date(ga4DateInTimeZone(now, "Europe/Berlin"), -1),
+    totals: {},
+    issues: [],
+  });
+  if (result.status === "accepted") await env.KV.put(setupKey, "accepted");
+  return result.status;
+}
 async function run(now = new Date()) {
   // Hourly trigger permits retry after failure; a successful daily run is skipped.
   const local = new Intl.DateTimeFormat("en-GB", {
@@ -349,4 +377,4 @@ async function run(now = new Date()) {
     });
   return results;
 }
-export const ConversionMonitor = { getProject, checkProject, run };
+export const ConversionMonitor = { getProject, checkProject, run, testAlerts };

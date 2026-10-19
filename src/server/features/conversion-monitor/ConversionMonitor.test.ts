@@ -261,3 +261,19 @@ test("a recovered outage can alert again while retries within an outage stay qui
   expect(mocks.notify).toHaveBeenCalledTimes(22);
   expect(mocks.notify.mock.calls[11][0].id).not.toBe(firstId);
 });
+
+test("bootstrap test sends no conversion counts and is skipped after provider acceptance", async () => {
+  expect(await ConversionMonitor.testAlerts()).toBe("accepted");
+  expect(mocks.notify.mock.calls[0][0]).toMatchObject({
+    setup: true,
+    totals: {},
+    issues: [],
+  });
+  expect(mocks.put).toHaveBeenCalledWith(
+    "conversion-monitor:setup-test:v1",
+    "accepted",
+  );
+  mocks.get.mockResolvedValue("accepted");
+  await ConversionMonitor.testAlerts();
+  expect(mocks.notify).toHaveBeenCalledTimes(1);
+});

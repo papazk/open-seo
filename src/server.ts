@@ -202,9 +202,15 @@ export default {
     env: Env,
     _ctx: ExecutionContext,
   ) {
-    if (controller.cron === "23 * * * *") {
+    const monitorBootstrap =
+      controller.cron === "* * * * *" &&
+      Reflect.get(env, "CONVERSION_MONITOR_BOOTSTRAP") === "true";
+    if (controller.cron === "23 * * * *" || monitorBootstrap) {
       if (Reflect.get(env, "CONVERSION_MONITOR_ENABLED") === "true")
-        await withPgClient(() => ConversionMonitor.run());
+        await withPgClient(async () => {
+          if (monitorBootstrap) await ConversionMonitor.testAlerts();
+          await ConversionMonitor.run();
+        });
       return;
     }
     if (controller.cron === MCP_OAUTH_PURGE_CRON) {

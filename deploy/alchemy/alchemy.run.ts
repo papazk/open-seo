@@ -311,6 +311,9 @@ export default Alchemy.Stack(
   Effect.gen(function* () {
     const stage = yield* Alchemy.Stage;
     const prod = stage === HOSTED_PROD_STAGE;
+    const monitorBootstrap =
+      stage === "selfhost" &&
+      (yield* optionalVar("CONVERSION_MONITOR_BOOTSTRAP")) === "true";
     // Fail closed: an unset AUTH_MODE gets the Access-gated mode (matching the
     // app's own default in src/lib/auth-mode.ts), never public hosted signup.
     // hosted/local_noauth must be set explicitly.
@@ -411,7 +414,6 @@ export default Alchemy.Stack(
         POSTHOG_PUBLIC_KEY: dataEnv.POSTHOG_PUBLIC_KEY,
         POSTHOG_HOST: dataEnv.POSTHOG_HOST,
         AUTH_MODE: authMode,
-        CONVERSION_MONITOR_ENABLED: stage === "selfhost" ? "true" : "false",
         DATABASE_PROVIDER: databaseProvider || "d1",
         ...(prodHyperdrive ? { HYPERDRIVE: prodHyperdrive } : {}),
         // This worker is the code home of the scratchpad DO and the
@@ -476,13 +478,18 @@ export default Alchemy.Stack(
       // Scheduled rank checks — src/server.ts `scheduled` handler.
       crons:
         stage === "selfhost"
-          ? [...wrangler.triggers.crons, "23 * * * *"]
+          ? [
+              ...wrangler.triggers.crons,
+              "23 * * * *",
+              ...(monitorBootstrap ? ["* * * * *"] : []),
+            ]
           : wrangler.triggers.crons,
       env: {
         ...resources,
         ...dataEnv,
         AUTH_MODE: authMode,
         CONVERSION_MONITOR_ENABLED: stage === "selfhost" ? "true" : "false",
+        CONVERSION_MONITOR_BOOTSTRAP: monitorBootstrap ? "true" : "false",
         DATABASE_PROVIDER: databaseProvider || "d1",
         BETTER_AUTH_URL: authUrl,
         // The audit worker above always binds BROWSER; the app worker checks

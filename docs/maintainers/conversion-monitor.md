@@ -16,3 +16,9 @@ Notifications use the private OpenSeoMonitorAlerts RPC entrypoint in the existin
 4. Retire the chat-based monitor only after cloud execution and notification delivery are verified.
 
 A rejected/uncertain notification is visible in OpenSEO and requires review. Installation errors can result from a site blocking the monitor, so an unverified check must not be described as broken tracking.
+
+## Bootstrap verification
+
+`CONVERSION_MONITOR_BOOTSTRAP=true` temporarily adds a one-minute selfhost trigger. It sends one clearly labelled Telegram setup test with no conversion counts, then runs the ordinary monitor. A fixed notification ID prevents duplicate setup messages across interruptions. After observing a real scheduled run, deploy again with the flag absent or false to remove that trigger. The final release keeps only the normal hourly minute-23 monitor trigger plus the pre-existing schedules.
+
+When preserving an existing Alchemy-managed Access gate, supplying the observed `TEAM_DOMAIN` alone avoids an organization lookup while keeping both Access resources managed. Supplying `POLICY_AUD` as well changes the stack to externally managed Access and may plan deletion of its old managed resources; do not apply such a plan. Confirm the Access gate and database/storage resources are no-ops before publishing. Record Cloudflare recovery bookmarks without exporting private database records.
